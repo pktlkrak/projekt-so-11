@@ -1,0 +1,3 @@
+**/*.o
+ioman/ioman
+ioman/test/test
