@@ -1,4 +1,6 @@
 #pragma once
+#include <stdbool.h>
+
 #ifndef IOMAN_SERVER
 #define IOMAN_CLIENT
 #endif
@@ -26,4 +28,5 @@ struct IOManInitPacket {
 #ifdef IOMAN_CLIENT
 void iomanConnect(struct IOManInitPacket *packet, const char *name);
 void msg(const char *format, ...);
+void iomanTakeoverStdio(bool forwardToOriginal);
 #endif
