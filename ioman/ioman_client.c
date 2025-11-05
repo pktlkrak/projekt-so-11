@@ -102,7 +102,7 @@ void iomanTakeoverStdio(bool enableForwardToOriginal) {
 
     _forwardToOriginal = enableForwardToOriginal;
     _originalStdout = dup(1);
-    _originalStderr = dup(1);
+    _originalStderr = dup(2);
 
     pipe(_pipe);
     _stderrPipe = _pipe[0];
