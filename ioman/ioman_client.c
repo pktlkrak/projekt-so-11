@@ -29,6 +29,8 @@ static int _originalStdout = 0, _originalStderr = 0;
 
 static void _iomanClose() {
     if(_inputStderrBuffer) {
+        fflush(stdout);
+        fflush(stderr);
         write(_takeoverWriteEndPipe, "1", 1);
         pthread_join(_takeoverThread, NULL);
         free(_inputStderrBuffer);
