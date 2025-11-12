@@ -1,3 +1,4 @@
 **/*.o
 ioman/ioman
 ioman/test/test
+passenger/main
