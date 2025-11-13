@@ -1,0 +1,3 @@
+#!/bin/sh
+lsipc -q | tail -n +2 | awk '{ print($2); }' | xargs -n 1 ipcrm -q
+lsipc -m | tail -n +2 | awk '{ print($2); }' | xargs -n 1 ipcrm -m
