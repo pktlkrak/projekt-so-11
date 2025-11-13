@@ -28,8 +28,8 @@ std::vector<Passenger> passengersWaitingForBridge;
 Passenger bridge[BRIDGE_CAPACITY];
 int bridgeCursor;
 struct BoatContents *dockedBoat = NULL;
-key_t boatSHMId = -1;
-int boatSHMFD = -1;
+key_t boatSHMKey = -1;
+int boatSHMID = -1;
 size_t boatSHMSize = -1;
 pid_t boatPid;
 bool boatLocked;
@@ -41,7 +41,7 @@ bool boatLocked;
 void initializePassenger(Passenger passenger) {
     // Is the bridge full?
     BRIDGE_LOCK;
-    if(bridgeCursor == BRIDGE_CAPACITY) {
+    if(bridgeCursor == BRIDGE_CAPACITY || boatLocked) {
         // Doesn't fit. Put it on the queue waiting for the bridge to free up.
         msg("The passenger does not fit on the bridge.");
         passengersWaitingForBridge.emplace_back(passenger);
@@ -50,7 +50,7 @@ void initializePassenger(Passenger passenger) {
         // Move onto the bridge directly.
         // TODO: Bikes
         bridge[bridgeCursor] = passenger;
-        msg("Passenger placed onto the bridge.");
+        msg("Passenger %d placed onto the bridge.", bridge[bridgeCursor].pid);
         kill(bridge[bridgeCursor++].pid, SIG_PLACE_ON_BRIDGE);
     }
     // Ask the bridge thread to manage that new passenger of ours.
@@ -58,6 +58,7 @@ void initializePassenger(Passenger passenger) {
     BRIDGE_UNLOCK;
 }
 
+// Treats the bridge mutex as locked.
 void moveWaitingPassengerOntoBridge() {
     bridge[bridgeCursor] = passengersWaitingForBridge.front();
     passengersWaitingForBridge.erase(passengersWaitingForBridge.begin());
@@ -67,7 +68,7 @@ void moveWaitingPassengerOntoBridge() {
 // Treats the bridge mutex as locked.
 Passenger shiftFirstWaitingFromBridge() {
     Passenger first = bridge[0];
-    for(int i = 1; i<BRIDGE_CAPACITY; i++) {
+    for(int i = 1; i<bridgeCursor; i++) {
         bridge[i - 1] = bridge[i];
     }
     bridgeCursor--;
@@ -79,16 +80,18 @@ Passenger shiftFirstWaitingFromBridge() {
 }
 
 void* bridgeCheckingThread(void *) {
+    msg("Bridge thread created!");
     for(;;) {
         pthread_cond_wait(&somethingHappenedToTheBridge, &somethingHappenedToTheBridgeMutex);
         if(awaitTermination) return NULL;
 
         BRIDGE_LOCK;
         // Do we have a boat docked with free spaces and there's someone on the bridge?
-        while(!boatLocked && dockedBoat != NULL && dockedBoat->nextFreeSpot != dockedBoat->spotCount) {
+        while(!boatLocked && dockedBoat != NULL && dockedBoat->nextFreeSpot != dockedBoat->spotCount && bridgeCursor > 0) {
             // Move the first element on the bridge to the boat.
             Passenger toPlaceOnBoat = shiftFirstWaitingFromBridge();
-            MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMId, dockedBoat->nextFreeSpot++ }}};
+            msg("Signaling %d to take spot %d on the boat.", toPlaceOnBoat.pid, dockedBoat->nextFreeSpot);
+            MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMKey, dockedBoat->nextFreeSpot++ }}};
             // Tell the passenger to take the designated space on the boat:
             MSGQUEUE_SEND(&msgPlaceOnBoat);
             kill(toPlaceOnBoat.pid, SIG_PLACE_ON_BOAT);
@@ -99,32 +102,36 @@ void* bridgeCheckingThread(void *) {
 
 void evictEveryoneFromBridge() {
     BRIDGE_LOCK;
-    // Evict everyone from the bridge
-    for(int i = bridgeCursor - 1; i >= 0; i--) {
-        kill(bridge[i].pid, SIG_GET_OFF_BRIDGE);
+    if(bridgeCursor > 0) {
+        // Evict everyone from the bridge
+        msg("Evicting everyone from the bridge.");
+        for(int i = bridgeCursor - 1; i >= 0; i--) {
+            msg("Evicting %d from the bridge", bridge[i].pid);
+            kill(bridge[i].pid, SIG_GET_OFF_BRIDGE);
+        }
+        bridgeCursor = 0; // Bridge empty.
     }
-    bridgeCursor = 0; // Bridge empty.
     BRIDGE_UNLOCK;
 }
 
 void boatLeaves() {
-    munmap(dockedBoat, boatSHMSize);
+    assert(dockedBoat);
+    shmdt(dockedBoat);
     dockedBoat = NULL;
-    close(boatSHMFD);
-    boatSHMFD = -1;
+    boatSHMID = -1;
     boatSHMSize = -1;
-    boatSHMId = -1;
+    boatSHMKey = -1;
 
     evictEveryoneFromBridge();
 }
 
 void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
     boatSHMSize = boat->boatSHMSize;
-    boatSHMId = boat->boatSHMId;
+    boatSHMKey = boat->boatSHMKey;
     boatPid = boat->boatPid;
-    boatSHMFD = shmget(boatSHMId, boatSHMSize, 0);
-    assert(boatSHMFD >= 0);
-    dockedBoat = (struct BoatContents *) mmap(NULL, boatSHMSize, PROT_READ | PROT_WRITE, MAP_SHARED, boatSHMFD, 0);
+    boatSHMID = shmget(boatSHMKey, boatSHMSize, 0);
+    assert(boatSHMID >= 0);
+    dockedBoat = (struct BoatContents *) shmat(boatSHMID, NULL, 0);
     // Do we have any passengers on the boat?
     if(dockedBoat->nextFreeSpot != 0) {
         // Make space for them on the bridge.
@@ -132,6 +139,7 @@ void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
         evictEveryoneFromBridge();
     } else {
         boatLocked = false;
+        BRIDGE_CHANGED;
     }
 }
 
@@ -144,6 +152,8 @@ void acceptPeopleOntoBridge() {
     BRIDGE_CHANGED;
     BRIDGE_UNLOCK;
 }
+
+pthread_t bridgeThread;
 
 int main(int argc, char **argv) {
     if(argc < 2) {
@@ -159,6 +169,9 @@ int main(int argc, char **argv) {
     snprintf(ownName, sizeof(ownName), "Dispatcher %08x", myIdentifier);
     iomanConnect(&init, ownName);
     // iomanTakeoverStdio(false);
+
+    // Init the bridge thread
+    pthread_create(&bridgeThread, NULL, bridgeCheckingThread, NULL);
 
     // Initialize msgqueue:
     msgqueue = msgget(myIdentifier, IPC_CREAT | S_IRWXU | S_IRWXG | S_IRWXO);
@@ -182,7 +195,7 @@ int main(int argc, char **argv) {
                 break;
             case ID_GET_OFF_BOAT:
                 assert(dockedBoat != NULL);
-                assert(dockedBoat->nextFreeSpot);
+                assert(dockedBoat->nextFreeSpot > 0);
                 assert(boatLocked);
                 // Use this field as a counter only. All passengers must leave.
                 // TODO: Put this passenger on the bridge temporarily?:
@@ -192,6 +205,8 @@ int main(int argc, char **argv) {
                     memset(dockedBoat->spaces, 0, sizeof(pid_t) * dockedBoat->spotCount);
                     dockedBoat->destinationMessageQueue = -1;
                     boatLocked = false;
+                    // Make this show in the logs that the people get accepted only after the others have left the boat.
+                    sleep(1);
                     acceptPeopleOntoBridge();
                 }
                 break;

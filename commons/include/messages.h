@@ -17,7 +17,7 @@ union _MsgQueueUnion {
     } putOnBridge;
     struct {
         size_t boatSHMSize;
-        key_t boatSHMId;
+        key_t boatSHMKey;
         int spotIndex;
     } putOnBoat;
     struct {
@@ -25,7 +25,7 @@ union _MsgQueueUnion {
     } getOffBoat;
     struct BoatReference {
         size_t boatSHMSize;
-        key_t boatSHMId;
+        key_t boatSHMKey;
         pid_t boatPid;
     } incomingBoat;
 };

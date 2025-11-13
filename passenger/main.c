@@ -56,31 +56,28 @@ int main(int argc, char **argv) {
         struct MsgQueueMessage placeOnBoatMessage;
         msg("Waiting for the message from the boat about the new dispatcher's key...");
         MSGQUEUE_RECV_C_DIRECT(&placeOnBoatMessage);
-        int boatShmId = placeOnBoatMessage.contents.putOnBoat.boatSHMId;
+        int boatSHMKey = placeOnBoatMessage.contents.putOnBoat.boatSHMKey;
         size_t boatSHMSize = placeOnBoatMessage.contents.putOnBoat.boatSHMSize;
         int mySpotIndex = placeOnBoatMessage.contents.putOnBoat.spotIndex;
-        int boatSHMFD = shmget(boatShmId, boatSHMSize, 0);
-        struct BoatContents *boatSHM = (struct BoatContents *) mmap(NULL, boatSHMSize, PROT_READ | PROT_WRITE, MAP_SHARED, boatSHMFD, 0);
+        int boatSHMId = shmget(boatSHMKey, boatSHMSize, 0);
+        struct BoatContents *boatSHM = shmat(boatSHMId, NULL, 0);
         // TODO: Place self on boat - semaphore.
+        boatSHM->spaces[mySpotIndex] = getpid();
 
-        msg("Disconnecting self from the initial dispatcher. Waiting on signal from the boat.");
+        msg("Placed self at spot %d of boat shm %08x. Waiting on signal from the boat.", mySpotIndex, boatSHMKey);
         msgqueue = -1;
         switch(waitForUserSignal()) {
             case SIG_BOAT_REACHED_DESTINATION:
-                msgqueue = boatSHM->destinationMessageQueue;
+                msg("The boat has reached its destination. New dispatcher ID is %d", boatSHM->destinationMessageQueue);
+                msgqueue = msgget(boatSHM->destinationMessageQueue, 0);
                 assert(msgqueue >= 0);
-                msg("The boat has reached its destination. New dispatcher ID is %08x", msgqueue);
                 break;
             default:
                 printf("Unknown signal received! Dispatcher in bad state.\n");
                 return -4;
         }
-        msgqueue = msgget(
-            msgqueue,
-            0
-        );
         struct MsgQueueMessage leaveBoatMessage = {
-            ID_GET_OFF_BOAT,
+            ID_GET_OFF_BOAT, { .getOffBoat = { .pid = getpid() }},
         };
         msg("Asking the dispatcher to let me get off the boat...");
         MSGQUEUE_SEND(&leaveBoatMessage);
@@ -91,8 +88,7 @@ int main(int argc, char **argv) {
                 return -3;
         }
         msg("I left the boat.");
-        munmap(boatSHM, boatSHMSize);
-        close(boatSHMFD);
+        shmdt(boatSHM);
         return 0;
     }
 }
