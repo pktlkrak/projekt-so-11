@@ -25,8 +25,14 @@ struct IOManInitPacket {
     unsigned short nameLength;
 };
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 #ifdef IOMAN_CLIENT
 void iomanConnect(struct IOManInitPacket *packet, const char *name);
 void msg(const char *format, ...);
 void iomanTakeoverStdio(bool forwardToOriginal);
+#endif
+#ifdef __cplusplus
+}
 #endif
