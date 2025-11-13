@@ -1,22 +1,33 @@
 #pragma once
 #include <assert.h>
+#include <errno.h>
 
 // Message queues:
 #define MSG_QUEUE_MSGSZ sizeof(union _MsgQueueUnion)
 
 #define ID_INITIALIZE_PUT_ON_BRIDGE 1
-#define ID_PUT_ON_BOAT 2
+#define ID_BOAT_ARRIVED 2
 #define ID_GET_OFF_BOAT 3
+#define ID_BOAT_DEPARTS 4
 #define ID_PIDMASK 0x40000000
 
 union _MsgQueueUnion {
     struct {
         pid_t pid;
     } putOnBridge;
-    struct {} putOnBoat;
     struct {
-        key_t newDispatcher;
-    } reachedOppositeStop;
+        size_t boatSHMSize;
+        key_t boatSHMId;
+        int spotIndex;
+    } putOnBoat;
+    struct {
+        pid_t pid;
+    } getOffBoat;
+    struct BoatReference {
+        size_t boatSHMSize;
+        key_t boatSHMId;
+        pid_t boatPid;
+    } incomingBoat;
 };
 
 struct MsgQueueMessage {
@@ -24,9 +35,9 @@ struct MsgQueueMessage {
     union _MsgQueueUnion contents;
 };
 
-#define MSGQUEUE_SEND(msg) assert(0 == msgsnd(msgqueue, msg, MSG_QUEUE_MSGSZ, 0))
-#define MSGQUEUE_READ_DISP(msg) assert(0 < msgrcv(msgqueue, msg, MSG_QUEUE_MSGSZ, -ID_PIDMASK, 0))
-#define MSGQUEUE_READ_C_DIRECT(msg) assert(0 < msgrcv(msgqueue, msg, MSG_QUEUE_MSGSZ, getpid() | ID_PIDMASK, 0))
+#define MSGQUEUE_SEND(x) if(-1 == msgsnd(msgqueue, x, MSG_QUEUE_MSGSZ, 0)) { msg("Failed to MSGQUEUE_SEND! Errno: %d", errno); abort(); }
+#define MSGQUEUE_RECV_GLOBAL(x) if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, -ID_PIDMASK, 0)) { msg("Failed to MSGQUEUE_RECV_GLOBAL! Errno: %d", errno); abort(); }
+#define MSGQUEUE_RECV_C_DIRECT(x) if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, getpid() | ID_PIDMASK, 0)) { msg("Failed to MSGQUEUE_RECV_C_DIRECT! Errno: %d", errno); abort(); }
 
 // Signals:
 
@@ -34,3 +45,15 @@ struct MsgQueueMessage {
 #define SIG_PLACE_ON_BOAT SIGUSR1
 #define SIG_GET_OFF_BRIDGE SIGUSR2
 #define SIG_GET_OFF_BOAT SIGUSR2
+#define SIG_BOAT_REACHED_DESTINATION SIGUSR1
+
+
+// SHM:
+
+struct BoatContents {
+    int nextFreeSpot;
+    int spotCount;
+    key_t destinationMessageQueue;
+    pid_t spaces[0]; // This is an array of `spotCount' elements. This is the simplest way to declare it
+    // and C doesn't mind.
+};

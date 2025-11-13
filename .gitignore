@@ -3,3 +3,4 @@ ioman/ioman
 ioman/test/test
 passenger/main
 passenger/test/signaltest
+dispatcher/main

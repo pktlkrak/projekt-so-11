@@ -1,0 +1,200 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include <string.h>
+#include <unistd.h>
+#include "global_config.h"
+#include "ioman.h"
+#include "messages.h"
+#include <sys/msg.h>
+#include <pthread.h>
+#include <vector>
+#include <sys/mman.h>
+#include <sys/shm.h>
+#include <fcntl.h>
+
+bool awaitTermination = false;
+int msgqueue;
+
+struct Passenger {
+    pid_t pid;
+};
+
+pthread_mutex_t bridgeMutex = PTHREAD_MUTEX_INITIALIZER;
+
+pthread_cond_t somethingHappenedToTheBridge = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t somethingHappenedToTheBridgeMutex = PTHREAD_MUTEX_INITIALIZER;
+std::vector<Passenger> passengersWaitingForBridge;
+Passenger bridge[BRIDGE_CAPACITY];
+int bridgeCursor;
+struct BoatContents *dockedBoat = NULL;
+key_t boatSHMId = -1;
+int boatSHMFD = -1;
+size_t boatSHMSize = -1;
+pid_t boatPid;
+bool boatLocked;
+
+#define BRIDGE_LOCK pthread_mutex_lock(&bridgeMutex)
+#define BRIDGE_UNLOCK pthread_mutex_unlock(&bridgeMutex)
+#define BRIDGE_CHANGED pthread_cond_broadcast(&somethingHappenedToTheBridge)
+
+void initializePassenger(Passenger passenger) {
+    // Is the bridge full?
+    BRIDGE_LOCK;
+    if(bridgeCursor == BRIDGE_CAPACITY) {
+        // Doesn't fit. Put it on the queue waiting for the bridge to free up.
+        msg("The passenger does not fit on the bridge.");
+        passengersWaitingForBridge.emplace_back(passenger);
+    } else {
+        // Would fit on the bridge.
+        // Move onto the bridge directly.
+        // TODO: Bikes
+        bridge[bridgeCursor] = passenger;
+        msg("Passenger placed onto the bridge.");
+        kill(bridge[bridgeCursor++].pid, SIG_PLACE_ON_BRIDGE);
+    }
+    // Ask the bridge thread to manage that new passenger of ours.
+    BRIDGE_CHANGED;
+    BRIDGE_UNLOCK;
+}
+
+void moveWaitingPassengerOntoBridge() {
+    bridge[bridgeCursor] = passengersWaitingForBridge.front();
+    passengersWaitingForBridge.erase(passengersWaitingForBridge.begin());
+    kill(bridge[bridgeCursor++].pid, SIG_PLACE_ON_BRIDGE);
+}
+
+// Treats the bridge mutex as locked.
+Passenger shiftFirstWaitingFromBridge() {
+    Passenger first = bridge[0];
+    for(int i = 1; i<BRIDGE_CAPACITY; i++) {
+        bridge[i - 1] = bridge[i];
+    }
+    bridgeCursor--;
+    // Do we have any passengers waiting for the bridge to free up? If so, let the first one step onto it.
+    if(!passengersWaitingForBridge.empty()) {
+        moveWaitingPassengerOntoBridge();
+    }
+    return first;
+}
+
+void* bridgeCheckingThread(void *) {
+    for(;;) {
+        pthread_cond_wait(&somethingHappenedToTheBridge, &somethingHappenedToTheBridgeMutex);
+        if(awaitTermination) return NULL;
+
+        BRIDGE_LOCK;
+        // Do we have a boat docked with free spaces and there's someone on the bridge?
+        while(!boatLocked && dockedBoat != NULL && dockedBoat->nextFreeSpot != dockedBoat->spotCount) {
+            // Move the first element on the bridge to the boat.
+            Passenger toPlaceOnBoat = shiftFirstWaitingFromBridge();
+            MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMId, dockedBoat->nextFreeSpot++ }}};
+            // Tell the passenger to take the designated space on the boat:
+            MSGQUEUE_SEND(&msgPlaceOnBoat);
+            kill(toPlaceOnBoat.pid, SIG_PLACE_ON_BOAT);
+        }
+        BRIDGE_UNLOCK;
+    }
+}
+
+void evictEveryoneFromBridge() {
+    BRIDGE_LOCK;
+    // Evict everyone from the bridge
+    for(int i = bridgeCursor - 1; i >= 0; i--) {
+        kill(bridge[i].pid, SIG_GET_OFF_BRIDGE);
+    }
+    bridgeCursor = 0; // Bridge empty.
+    BRIDGE_UNLOCK;
+}
+
+void boatLeaves() {
+    munmap(dockedBoat, boatSHMSize);
+    dockedBoat = NULL;
+    close(boatSHMFD);
+    boatSHMFD = -1;
+    boatSHMSize = -1;
+    boatSHMId = -1;
+
+    evictEveryoneFromBridge();
+}
+
+void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
+    boatSHMSize = boat->boatSHMSize;
+    boatSHMId = boat->boatSHMId;
+    boatPid = boat->boatPid;
+    boatSHMFD = shmget(boatSHMId, boatSHMSize, 0);
+    assert(boatSHMFD >= 0);
+    dockedBoat = (struct BoatContents *) mmap(NULL, boatSHMSize, PROT_READ | PROT_WRITE, MAP_SHARED, boatSHMFD, 0);
+    // Do we have any passengers on the boat?
+    if(dockedBoat->nextFreeSpot != 0) {
+        // Make space for them on the bridge.
+        boatLocked = true;
+        evictEveryoneFromBridge();
+    } else {
+        boatLocked = false;
+    }
+}
+
+void acceptPeopleOntoBridge() {
+    BRIDGE_LOCK;
+    while(!passengersWaitingForBridge.empty() && bridgeCursor < BRIDGE_CAPACITY) {
+        moveWaitingPassengerOntoBridge();
+    }
+    // Start packing people onto the boat:
+    BRIDGE_CHANGED;
+    BRIDGE_UNLOCK;
+}
+
+int main(int argc, char **argv) {
+    if(argc < 2) {
+        printf("Usage: %s <initial dispatcher message queue>\n", *argv);
+        return -1;
+    }
+
+    // Initialize logging:
+    key_t myIdentifier = atoi(argv[1]);
+    struct IOManInitPacket init = { 4, BLUE };
+    char ownName[64];
+    memset(ownName, 0, sizeof(ownName));
+    snprintf(ownName, sizeof(ownName), "Dispatcher %08x", myIdentifier);
+    iomanConnect(&init, ownName);
+    // iomanTakeoverStdio(false);
+
+    // Initialize msgqueue:
+    msgqueue = msgget(myIdentifier, IPC_CREAT | S_IRWXU | S_IRWXG | S_IRWXO);
+    assert(msgqueue >= 0);
+    msg("Dispatcher is ready.");
+
+    mainHandlingLoop:
+    for(;;) {
+        struct MsgQueueMessage inbound;
+        MSGQUEUE_RECV_GLOBAL(&inbound);
+        switch(inbound.id) {
+            case ID_INITIALIZE_PUT_ON_BRIDGE:
+                msg("Passenger %d asked to be put on the bridge.", inbound.contents.putOnBridge.pid);
+                initializePassenger(Passenger { inbound.contents.putOnBridge.pid });
+                break;
+            case ID_BOAT_ARRIVED:
+                prepareBoat(&inbound.contents.incomingBoat);
+                break;
+            case ID_BOAT_DEPARTS:
+                boatLeaves();
+                break;
+            case ID_GET_OFF_BOAT:
+                assert(dockedBoat != NULL);
+                assert(dockedBoat->nextFreeSpot);
+                assert(boatLocked);
+                // Use this field as a counter only. All passengers must leave.
+                // TODO: Put this passenger on the bridge temporarily?:
+                kill(inbound.contents.getOffBoat.pid, SIG_GET_OFF_BOAT);
+                if(--dockedBoat->nextFreeSpot == 0) {
+                    // Reset the boat state. Start accepting passengers.
+                    memset(dockedBoat->spaces, 0, sizeof(pid_t) * dockedBoat->spotCount);
+                    dockedBoat->destinationMessageQueue = -1;
+                    boatLocked = false;
+                    acceptPeopleOntoBridge();
+                }
+                break;
+        }
+    }
+}
