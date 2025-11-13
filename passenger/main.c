@@ -6,6 +6,8 @@
 #include "messages.h"
 #include "signal_helpers.h"
 #include <sys/msg.h>
+#include <sys/shm.h>
+#include <sys/mman.h>
 
 int main(int argc, char **argv) {
     if(argc < 2) {
@@ -17,7 +19,7 @@ int main(int argc, char **argv) {
     struct IOManInitPacket init = { 2, RED };
     iomanConnect(&init, "Passenger");
     // iomanTakeoverStdio(false);
-    
+
     // Initialize signals:
     registerSignals();
 
@@ -39,32 +41,44 @@ int main(int argc, char **argv) {
                 msg("Dispatcher agreed. I am on the bridge now!");
                 break;
             default:
-                printf("Unknown signal received! Dispatcher in bad state.");
+                printf("Unknown signal received! Dispatcher in bad state.\n");
                 return -2;
                 break;
         }
-        struct MsgQueueMessage requestOnBoatPlacement = {
-            ID_PUT_ON_BOAT,
-        };
-        msg("Asking the dispatcher to be put on the boat...");
-        MSGQUEUE_SEND(&requestOnBoatPlacement);
         switch(waitForUserSignal()) {
             case SIG_GET_OFF_BRIDGE: 
                 msg("The dispatcher told me to get off the bridge.");
                 continue waitingForBridge;
             case SIG_PLACE_ON_BOAT:
-                msg("The dispatcher has placed me on the boat.");
+                msg("The dispatcher has informed me that I should be placed on the boat.");
                 break;
         }
-        struct MsgQueueMessage reachedOppositeStopMessage;
+        struct MsgQueueMessage placeOnBoatMessage;
         msg("Waiting for the message from the boat about the new dispatcher's key...");
-        MSGQUEUE_READ_C_DIRECT(&reachedOppositeStopMessage);
+        MSGQUEUE_RECV_C_DIRECT(&placeOnBoatMessage);
+        int boatShmId = placeOnBoatMessage.contents.putOnBoat.boatSHMId;
+        size_t boatSHMSize = placeOnBoatMessage.contents.putOnBoat.boatSHMSize;
+        int mySpotIndex = placeOnBoatMessage.contents.putOnBoat.spotIndex;
+        int boatSHMFD = shmget(boatShmId, boatSHMSize, 0);
+        struct BoatContents *boatSHM = (struct BoatContents *) mmap(NULL, boatSHMSize, PROT_READ | PROT_WRITE, MAP_SHARED, boatSHMFD, 0);
+        // TODO: Place self on boat - semaphore.
+
+        msg("Disconnecting self from the initial dispatcher. Waiting on signal from the boat.");
+        msgqueue = -1;
+        switch(waitForUserSignal()) {
+            case SIG_BOAT_REACHED_DESTINATION:
+                msgqueue = boatSHM->destinationMessageQueue;
+                assert(msgqueue >= 0);
+                msg("The boat has reached its destination. New dispatcher ID is %08x", msgqueue);
+                break;
+            default:
+                printf("Unknown signal received! Dispatcher in bad state.\n");
+                return -4;
+        }
         msgqueue = msgget(
-            reachedOppositeStopMessage.contents.reachedOppositeStop.newDispatcher,
+            msgqueue,
             0
         );
-        assert(msgqueue >= 0);
-        msg("Got new dispatcher key: %x", reachedOppositeStopMessage.contents.reachedOppositeStop.newDispatcher);
         struct MsgQueueMessage leaveBoatMessage = {
             ID_GET_OFF_BOAT,
         };
@@ -73,10 +87,12 @@ int main(int argc, char **argv) {
         switch(waitForUserSignal()) {
             case SIG_GET_OFF_BOAT: break;
             default:
-                printf("Unknown signal received! Dispatcher in bad state.");
+                printf("Unknown signal received! Dispatcher in bad state.\n");
                 return -3;
         }
         msg("I left the boat.");
+        munmap(boatSHM, boatSHMSize);
+        close(boatSHMFD);
         return 0;
     }
 }
