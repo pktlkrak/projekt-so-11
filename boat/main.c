@@ -11,11 +11,23 @@
 #include <fcntl.h>
 #include <time.h>
 #include <sys/mman.h>
+#include <pthread.h>
 
 #define BOAT_SHM_SIZE (sizeof(struct BoatContents) + BOAT_CAPACITY * sizeof(pid_t))
 
 struct BoatContents *self;
 int shmFd;
+bool shouldEndTrip = false;
+
+void signalHandler(int a) {
+    shouldEndTrip = true;
+}
+
+void waitForever() {
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+    pthread_cond_wait(&cond, &mutex);
+}
 
 int main(int argc, char **argv) {
     if(argc < 3) {
@@ -32,6 +44,13 @@ int main(int argc, char **argv) {
     snprintf(ownName, sizeof(ownName), "Boat %08x <==> %08x", messageQueueKeyA, messageQueueKeyB);
     iomanConnect(&init, ownName);
     // iomanTakeoverStdio(false);
+
+    // Initialize signals
+    sigset_t earlyLeaveSignal;
+    sigaddset(&earlyLeaveSignal, SIG_BOAT_EARLY_LEAVE);
+    sigprocmask(SIG_BLOCK, &earlyLeaveSignal, NULL);
+    struct timespec waitTime = { BOAT_WAIT_TIME, 0 };
+    signal(SIG_BOAT_TERMINATE, signalHandler);
 
     // Initialize msgqueue:
     int msgqueueA = msgget(messageQueueKeyA, 0);
@@ -50,6 +69,7 @@ int main(int argc, char **argv) {
     self->spotCount = BOAT_CAPACITY;
     self->destinationMessageQueue = messageQueueKeyB;
 
+    int cycles = 0;
     // Main loop:
     for(;;) {
         msg("Arrived to dispatcher %d with %d passengers", msgqueue == msgqueueA ? messageQueueKeyA : messageQueueKeyB, self->nextFreeSpot);
@@ -65,7 +85,12 @@ int main(int argc, char **argv) {
             kill(self->spaces[i], SIG_BOAT_REACHED_DESTINATION);
         }
         // Wait before leaving...
-        sleep(BOAT_WAIT_TIME);
+        sigaddset(&earlyLeaveSignal, SIG_BOAT_EARLY_LEAVE);
+        sigtimedwait(&earlyLeaveSignal, NULL, &waitTime);
+        if(cycles > BOAT_MAX_CYCLES || shouldEndTrip) {
+            msg("This was the boat's last trip. Its simulation is stopped.");
+            waitForever();
+        }
         msg("Boat leaving...");
         // Leave
         struct MsgQueueMessage leaveMessage = { ID_BOAT_DEPARTS };
@@ -81,5 +106,6 @@ int main(int argc, char **argv) {
             msgqueue = msgqueueA;
             self->destinationMessageQueue = messageQueueKeyA;
         }
+        ++cycles;
     }
 }
