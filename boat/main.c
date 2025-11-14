@@ -21,6 +21,7 @@ bool shouldEndTrip = false;
 
 void signalHandler(int a) {
     shouldEndTrip = true;
+    msg("Got the early termination signal!");
 }
 
 void waitForever() {
