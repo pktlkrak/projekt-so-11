@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
             msg("This was the boat's last trip. Its simulation is stopped.");
             waitForever();
         }
-        msg("Boat leaving...");
+        msg("Boat leaving for its %d. journey (out of %d)...", cycles + 1, BOAT_MAX_CYCLES);
         // Leave
         struct MsgQueueMessage leaveMessage = { ID_BOAT_DEPARTS };
         MSGQUEUE_SEND(&leaveMessage);
