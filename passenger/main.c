@@ -10,6 +10,9 @@
 #include <sys/mman.h>
 
 int main(int argc, char **argv) {
+    // Initialize signals:
+    registerSignals();
+
     if(argc < 2) {
         printf("Usage: %s <initial dispatcher message queue>\n", *argv);
         return -1;
@@ -19,9 +22,6 @@ int main(int argc, char **argv) {
     struct IOManInitPacket init = { 2, RED };
     iomanConnect(&init, "Passenger");
     // iomanTakeoverStdio(false);
-
-    // Initialize signals:
-    registerSignals();
 
     // Initialize msgqueue:
     key_t currentlyBoundDispatcher = atoi(argv[1]);
@@ -45,24 +45,22 @@ int main(int argc, char **argv) {
                 return -2;
                 break;
         }
-        switch(waitForUserSignal()) {
-            case SIG_GET_OFF_BRIDGE: 
-                msg("The dispatcher told me to get off the bridge.");
-                continue waitingForBridge;
-            case SIG_PLACE_ON_BOAT:
-                msg("The dispatcher has informed me that I should be placed on the boat.");
-                break;
-        }
         struct MsgQueueMessage placeOnBoatMessage;
-        msg("Waiting for the message from the boat about the new dispatcher's key...");
         MSGQUEUE_RECV_C_DIRECT(&placeOnBoatMessage);
         int boatSHMKey = placeOnBoatMessage.contents.putOnBoat.boatSHMKey;
         size_t boatSHMSize = placeOnBoatMessage.contents.putOnBoat.boatSHMSize;
         int mySpotIndex = placeOnBoatMessage.contents.putOnBoat.spotIndex;
+        if(mySpotIndex == -1) {
+            msg("The dispatcher told me to get off the bridge.");
+            continue waitingForBridge;
+        }
+        msg("The dispatcher has informed me that I should be placed on the boat.");
         int boatSHMId = shmget(boatSHMKey, boatSHMSize, 0);
         struct BoatContents *boatSHM = shmat(boatSHMId, NULL, 0);
         // TODO: Place self on boat - semaphore.
         boatSHM->spaces[mySpotIndex] = getpid();
+        struct MsgQueueMessage placedOnBoatMessage = { ID_IS_ON_BOAT };
+        MSGQUEUE_SEND(&placedOnBoatMessage);
 
         msg("Placed self at spot %d of boat shm %08x. Waiting on signal from the boat.", mySpotIndex, boatSHMKey);
         msgqueue = -1;

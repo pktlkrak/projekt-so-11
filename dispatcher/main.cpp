@@ -79,6 +79,11 @@ Passenger shiftFirstWaitingFromBridge() {
     return first;
 }
 
+pthread_mutex_t enqueuedPlaceOnBoatMutex = PTHREAD_MUTEX_INITIALIZER;
+int enqueuedPlaceOnBoat = 0;
+#define ENQ_LOCK pthread_mutex_lock(&enqueuedPlaceOnBoatMutex)
+#define ENQ_UNLOCK pthread_mutex_unlock(&enqueuedPlaceOnBoatMutex)
+
 void* bridgeCheckingThread(void *) {
     msg("Bridge thread created!");
     for(;;) {
@@ -87,34 +92,38 @@ void* bridgeCheckingThread(void *) {
 
         BRIDGE_LOCK;
         // Do we have a boat docked with free spaces and there's someone on the bridge?
-        while(!boatLocked && dockedBoat != NULL && dockedBoat->nextFreeSpot != dockedBoat->spotCount && bridgeCursor > 0) {
-            // Move the first element on the bridge to the boat.
-            Passenger toPlaceOnBoat = shiftFirstWaitingFromBridge();
-            msg("Signaling %d to take spot %d on the boat.", toPlaceOnBoat.pid, dockedBoat->nextFreeSpot);
-            MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMKey, dockedBoat->nextFreeSpot++ }}};
-            // Tell the passenger to take the designated space on the boat:
-            MSGQUEUE_SEND(&msgPlaceOnBoat);
-            kill(toPlaceOnBoat.pid, SIG_PLACE_ON_BOAT);
+        if(dockedBoat != NULL) {
+            ENQ_LOCK;
+            while(!boatLocked && dockedBoat->nextFreeSpot < dockedBoat->spotCount && bridgeCursor > 0) {
+                // Move the first element on the bridge to the boat.
+                Passenger toPlaceOnBoat = shiftFirstWaitingFromBridge();
+                msg("Signaling %d to take spot %d on the boat.", toPlaceOnBoat.pid, dockedBoat->nextFreeSpot);
+                MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMKey, dockedBoat->nextFreeSpot++ }}};
+                // Tell the passenger to take the designated space on the boat:
+                MSGQUEUE_SEND(&msgPlaceOnBoat);
+                ++enqueuedPlaceOnBoat;
+            }
+            ENQ_UNLOCK;
         }
         BRIDGE_UNLOCK;
     }
 }
 
 void evictEveryoneFromBridge() {
-    BRIDGE_LOCK;
     if(bridgeCursor > 0) {
         // Evict everyone from the bridge
         msg("Evicting everyone from the bridge.");
         for(int i = bridgeCursor - 1; i >= 0; i--) {
             msg("Evicting %d from the bridge", bridge[i].pid);
-            kill(bridge[i].pid, SIG_GET_OFF_BRIDGE);
+            MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | bridge[i].pid, { .putOnBoat = { 0, 0, -1 }}};
+            MSGQUEUE_SEND(&msgPlaceOnBoat);
         }
         bridgeCursor = 0; // Bridge empty.
     }
-    BRIDGE_UNLOCK;
 }
-
+// DEADLOCKS
 void boatLeaves() {
+    BRIDGE_LOCK;
     assert(dockedBoat);
     shmdt(dockedBoat);
     dockedBoat = NULL;
@@ -123,6 +132,7 @@ void boatLeaves() {
     boatSHMKey = -1;
 
     evictEveryoneFromBridge();
+    BRIDGE_UNLOCK;
 }
 
 void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
@@ -199,6 +209,7 @@ int main(int argc, char **argv) {
                 assert(boatLocked);
                 // Use this field as a counter only. All passengers must leave.
                 // TODO: Put this passenger on the bridge temporarily?:
+                msg("Passenger %d asked to be let off the boat.", inbound.contents.getOffBoat.pid);
                 kill(inbound.contents.getOffBoat.pid, SIG_GET_OFF_BOAT);
                 if(--dockedBoat->nextFreeSpot == 0) {
                     // Reset the boat state. Start accepting passengers.
@@ -210,6 +221,18 @@ int main(int argc, char **argv) {
                     acceptPeopleOntoBridge();
                 }
                 break;
+            case ID_IS_ON_BOAT:
+                assert(dockedBoat);
+                ENQ_LOCK;
+                assert(enqueuedPlaceOnBoat > 0);
+                if(--enqueuedPlaceOnBoat == 0 && dockedBoat->nextFreeSpot == dockedBoat->spotCount) {
+                    // We filled the boat up. Signal it to leave early
+                    msg("The boat is full. Making it leave early...");
+                    kill(boatPid, SIG_BOAT_EARLY_LEAVE);
+                }
+                ENQ_UNLOCK;
+                break;
+
         }
     }
 }

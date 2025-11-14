@@ -9,6 +9,7 @@
 #define ID_BOAT_ARRIVED 2
 #define ID_GET_OFF_BOAT 3
 #define ID_BOAT_DEPARTS 4
+#define ID_IS_ON_BOAT 5
 #define ID_PIDMASK 0x40000000
 
 union _MsgQueueUnion {
