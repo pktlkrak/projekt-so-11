@@ -18,6 +18,7 @@ int msgqueue;
 
 struct Passenger {
     pid_t pid;
+    bool hasBike;
 };
 
 pthread_mutex_t bridgeMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -26,32 +27,49 @@ pthread_cond_t somethingHappenedToTheBridge = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t somethingHappenedToTheBridgeMutex = PTHREAD_MUTEX_INITIALIZER;
 std::vector<Passenger> passengersWaitingForBridge;
 Passenger bridge[BRIDGE_CAPACITY];
-int bridgeCursor;
+int bridgeCursor = 0;
 struct BoatContents *dockedBoat = NULL;
 key_t boatSHMKey = -1;
 int boatSHMID = -1;
 size_t boatSHMSize = -1;
 pid_t boatPid;
-bool boatLocked;
+bool boatLocked = false;
 
 #define BRIDGE_LOCK pthread_mutex_lock(&bridgeMutex)
 #define BRIDGE_UNLOCK pthread_mutex_unlock(&bridgeMutex)
 #define BRIDGE_CHANGED pthread_cond_broadcast(&somethingHappenedToTheBridge)
 
+bool putPassengerOnBridge(const Passenger &passenger) {
+    bool bikeProblems = false;
+    if(passenger.hasBike) {
+        bool bikeWouldNotFitIntoShip = false;
+        if(dockedBoat) {
+            bikeWouldNotFitIntoShip = dockedBoat->freeBikeSpots == 0;
+        }
+        bool bikeWouldNotFitOntoBridge = bridgeCursor >= (BRIDGE_CAPACITY - 1);
+        bikeProblems = bikeWouldNotFitIntoShip || bikeWouldNotFitOntoBridge;
+    }
+    if(bikeProblems || bridgeCursor == BRIDGE_CAPACITY || boatLocked) return false;
+    bridge[bridgeCursor] = passenger;
+    msg("Passenger %d placed onto the bridge. (Br. slot %d)", bridge[bridgeCursor].pid, bridgeCursor);
+    bridgeCursor++;
+    if(passenger.hasBike) {
+        bridge[bridgeCursor] = passenger;
+        bridge[bridgeCursor].hasBike = false;
+        msg("Their bike takes slot %d", bridgeCursor);
+        bridgeCursor++;
+    }
+    kill(passenger.pid, SIG_PLACE_ON_BRIDGE);
+    return true;
+}
+
 void initializePassenger(Passenger passenger) {
     // Is the bridge full?
     BRIDGE_LOCK;
-    if(bridgeCursor == BRIDGE_CAPACITY || boatLocked) {
+    if(!putPassengerOnBridge(passenger)) {
         // Doesn't fit. Put it on the queue waiting for the bridge to free up.
         msg("The passenger does not fit on the bridge.");
         passengersWaitingForBridge.emplace_back(passenger);
-    } else {
-        // Would fit on the bridge.
-        // Move onto the bridge directly.
-        // TODO: Bikes
-        bridge[bridgeCursor] = passenger;
-        msg("Passenger %d placed onto the bridge.", bridge[bridgeCursor].pid);
-        kill(bridge[bridgeCursor++].pid, SIG_PLACE_ON_BRIDGE);
     }
     // Ask the bridge thread to manage that new passenger of ours.
     BRIDGE_CHANGED;
@@ -59,10 +77,20 @@ void initializePassenger(Passenger passenger) {
 }
 
 // Treats the bridge mutex as locked.
-void moveWaitingPassengerOntoBridge() {
-    bridge[bridgeCursor] = passengersWaitingForBridge.front();
-    passengersWaitingForBridge.erase(passengersWaitingForBridge.begin());
-    kill(bridge[bridgeCursor++].pid, SIG_PLACE_ON_BRIDGE);
+bool moveWaitingPassengerOntoBridge() {
+    msg("Putting one passenger onto the bridge...");
+    for(auto i = passengersWaitingForBridge.begin(); i<passengersWaitingForBridge.end(); i++) {
+        msg("Trying to put passenger %d on the bridge...", i->pid);
+        if(putPassengerOnBridge(*i)) {
+            msg("Succeeded.");
+            // Safe to do. We won't interate over this loop again.
+            passengersWaitingForBridge.erase(i);
+            return true;
+        } else {
+            msg("Failed.");
+        }
+    }
+    return false;
 }
 
 // Treats the bridge mutex as locked.
@@ -97,6 +125,22 @@ void* bridgeCheckingThread(void *) {
             while(!boatLocked && dockedBoat->nextFreeSpot < dockedBoat->spotCount && bridgeCursor > 0) {
                 // Move the first element on the bridge to the boat.
                 Passenger toPlaceOnBoat = shiftFirstWaitingFromBridge();
+                if(toPlaceOnBoat.hasBike) {
+                    // This space is taken by the bike itself. It is 100% guaranteed that the next spot will
+                    // be the cyclist.
+                    shiftFirstWaitingFromBridge();
+                    if(dockedBoat->freeBikeSpots == 0) {
+                        // The cyclist wouldn't fit onto the boat with their bike
+                        // Shift onto the list of passengers waiting in front of the bridge
+                        msg("The passenger %d wanted to get on the boat, but there's no more space for bikes. Telling them to step off the bridge", toPlaceOnBoat.pid);
+                        MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { 0, 0, -1 }}};
+                        MSGQUEUE_SEND(&msgPlaceOnBoat);
+                        continue;
+                    } else {
+                        // Will fit on the boat. Decrement the counter
+                        --dockedBoat->freeBikeSpots;
+                    }
+                }
                 msg("Signaling %d to take spot %d on the boat.", toPlaceOnBoat.pid, dockedBoat->nextFreeSpot);
                 MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMKey, dockedBoat->nextFreeSpot++ }}};
                 // Tell the passenger to take the designated space on the boat:
@@ -114,6 +158,7 @@ void evictEveryoneFromBridge() {
         // Evict everyone from the bridge
         msg("Evicting everyone from the bridge.");
         for(int i = bridgeCursor - 1; i >= 0; i--) {
+            if(bridge[i].hasBike) continue;
             msg("Evicting %d from the bridge", bridge[i].pid);
             MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | bridge[i].pid, { .putOnBoat = { 0, 0, -1 }}};
             MSGQUEUE_SEND(&msgPlaceOnBoat);
@@ -135,6 +180,16 @@ void boatLeaves() {
     BRIDGE_UNLOCK;
 }
 
+void acceptPeopleOntoBridge() {
+    BRIDGE_LOCK;
+    while(!passengersWaitingForBridge.empty() && bridgeCursor < BRIDGE_CAPACITY) {
+        if(!moveWaitingPassengerOntoBridge()) break;
+    }
+    // Start packing people onto the boat:
+    BRIDGE_CHANGED;
+    BRIDGE_UNLOCK;
+}
+
 void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
     boatSHMSize = boat->boatSHMSize;
     boatSHMKey = boat->boatSHMKey;
@@ -148,19 +203,11 @@ void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
         boatLocked = true;
         evictEveryoneFromBridge();
     } else {
+        msg("The boat has arrived empty - people can enter the bridge again.");
+        acceptPeopleOntoBridge();
         boatLocked = false;
         BRIDGE_CHANGED;
     }
-}
-
-void acceptPeopleOntoBridge() {
-    BRIDGE_LOCK;
-    while(!passengersWaitingForBridge.empty() && bridgeCursor < BRIDGE_CAPACITY) {
-        moveWaitingPassengerOntoBridge();
-    }
-    // Start packing people onto the boat:
-    BRIDGE_CHANGED;
-    BRIDGE_UNLOCK;
 }
 
 pthread_t bridgeThread;
@@ -195,7 +242,7 @@ int main(int argc, char **argv) {
         switch(inbound.id) {
             case ID_INITIALIZE_PUT_ON_BRIDGE:
                 msg("Passenger %d asked to be put on the bridge.", inbound.contents.putOnBridge.pid);
-                initializePassenger(Passenger { inbound.contents.putOnBridge.pid });
+                initializePassenger(Passenger { inbound.contents.putOnBridge.pid, inbound.contents.putOnBridge.hasBike });
                 break;
             case ID_BOAT_ARRIVED:
                 prepareBoat(&inbound.contents.incomingBoat);
@@ -214,10 +261,12 @@ int main(int argc, char **argv) {
                 if(--dockedBoat->nextFreeSpot == 0) {
                     // Reset the boat state. Start accepting passengers.
                     memset(dockedBoat->spaces, 0, sizeof(pid_t) * dockedBoat->spotCount);
+                    dockedBoat->freeBikeSpots = dockedBoat->bikeSpotCount;
                     dockedBoat->destinationMessageQueue = -1;
                     boatLocked = false;
                     // Make this show in the logs that the people get accepted only after the others have left the boat.
                     sleep(1);
+                    msg("The boat has no passengers left, people can enter the bridge again.");
                     acceptPeopleOntoBridge();
                 }
                 break;

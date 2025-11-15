@@ -1,6 +1,7 @@
 #pragma once
 #define BRIDGE_CAPACITY 5
 #define BOAT_CAPACITY 4
+#define BOAT_BIKE_CAPACITY 2
 #define BOAT_WAIT_TIME 10
 #define BOAT_TRIP_TIME 5
 #define BOAT_MAX_CYCLES 500

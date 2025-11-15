@@ -18,6 +18,11 @@ int main(int argc, char **argv) {
         return -1;
     }
 
+    bool hasBike = false;
+    if(argc > 2) {
+        hasBike = *argv[2] == '1';
+    }
+
     // Initialize logging:
     struct IOManInitPacket init = { 2, RED };
     iomanConnect(&init, "Passenger");
@@ -27,12 +32,12 @@ int main(int argc, char **argv) {
     key_t currentlyBoundDispatcher = atoi(argv[1]);
     int msgqueue = msgget(currentlyBoundDispatcher, 0);
     assert(msgqueue >= 0);
-    msg("Passenger is ready.");
+    msg("Passenger%s is ready.", hasBike ? " with bike" : "");
 
     // Actual client loop:
     waitingForBridge: for(;;) {
         struct MsgQueueMessage initMessage = {
-            ID_INITIALIZE_PUT_ON_BRIDGE, { .putOnBridge = { getpid() }}
+            ID_INITIALIZE_PUT_ON_BRIDGE, { .putOnBridge = { getpid(), hasBike }}
         };
         msg("Asking the dispatcher to be put on the bridge...");
         MSGQUEUE_SEND(&initMessage);

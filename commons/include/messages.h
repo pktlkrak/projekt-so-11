@@ -1,7 +1,7 @@
 #pragma once
 #include <assert.h>
 #include <errno.h>
-
+#include <stdbool.h>
 // Message queues:
 #define MSG_QUEUE_MSGSZ sizeof(union _MsgQueueUnion)
 
@@ -15,6 +15,7 @@
 union _MsgQueueUnion {
     struct {
         pid_t pid;
+        bool hasBike;
     } putOnBridge;
     struct {
         size_t boatSHMSize;
@@ -55,7 +56,9 @@ struct MsgQueueMessage {
 
 struct BoatContents {
     int nextFreeSpot;
+    int freeBikeSpots;
     int spotCount;
+    int bikeSpotCount;
     key_t destinationMessageQueue;
     pid_t spaces[0]; // This is an array of `spotCount' elements. This is the simplest way to declare it
     // and C doesn't mind.

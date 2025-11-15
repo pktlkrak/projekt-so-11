@@ -68,6 +68,7 @@ int main(int argc, char **argv) {
     msg("Boat storage address = %p", self);
     memset(self, 0, sizeof(*self) + BOAT_CAPACITY * sizeof(*self->spaces));
     self->spotCount = BOAT_CAPACITY;
+    self->freeBikeSpots = self->bikeSpotCount = BOAT_BIKE_CAPACITY;
     self->destinationMessageQueue = messageQueueKeyB;
 
     int cycles = 0;
@@ -88,7 +89,7 @@ int main(int argc, char **argv) {
         // Wait before leaving...
         sigaddset(&earlyLeaveSignal, SIG_BOAT_EARLY_LEAVE);
         sigtimedwait(&earlyLeaveSignal, NULL, &waitTime);
-        if(cycles > BOAT_MAX_CYCLES || shouldEndTrip) {
+        if(cycles >= BOAT_MAX_CYCLES || shouldEndTrip) {
             msg("This was the boat's last trip. Its simulation is stopped.");
             waitForever();
         }
