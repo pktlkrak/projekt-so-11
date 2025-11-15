@@ -8,6 +8,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <fcntl.h>
+#include <errno.h>
 
 #define IOMAN_SERVER
 #include "ioman.h"
@@ -17,6 +19,8 @@ IOMan is the first component of the project. It manages console I/O - makes sure
 synchronously and manages colors and indentation
 */
 
+// Log file FD:
+int logFD = -1;
 
 // Mutex for the output:
 pthread_mutex_t output = PTHREAD_MUTEX_INITIALIZER;
@@ -35,6 +39,15 @@ void printMessage(int backgroundColor, int foregroundColor, int pid, int indent,
     // Reset colors
     printf("\e[0m\n");
     va_end(args);
+    // If we have a logfile set, write it:
+    if(logFD != -1) {
+        va_start(args, fmt);
+        for(int i = 0; i<indent; i++) dprintf(logFD, " ");
+        dprintf(logFD, "[%d:%s]: ", pid, name);
+        vdprintf(logFD, fmt, args);
+        va_end(args);
+        dprintf(logFD, "\n");
+    }
     pthread_mutex_unlock(&output);
 }
 
@@ -79,7 +92,43 @@ void *singleSocketThread(void *_socketFD) {
 #undef CHECK_STATUS
 #undef READ_CHECK_STATUS
 
-int main() {
+void closeLog() {
+    if(logFD != -1) {
+        close(logFD);
+        logFD = -1;
+    }
+}
+
+int main(int argc, char **argv) {
+    bool fileAppend = false;
+    const char *logFile = NULL;
+    char opt;
+    while((opt = getopt(argc, argv, "al:")) != -1) {
+        switch(opt) {
+            case 'a':
+                fileAppend = true;
+                break;
+            case 'l':
+                logFile = optarg;
+                break;
+            default:
+                printf("Usage: %s [-l logFile [-a]]\n", *argv);
+                exit(1);
+        }
+    }
+    if(logFile != NULL) {
+        if(fileAppend) {
+            logFD = open(logFile, O_APPEND | O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
+        } else {
+            unlink(logFile);
+            logFD = creat(logFile, S_IRWXU | S_IRWXG | S_IRWXO);
+        }
+        if(logFD < 1) {
+            printf("Failed to open the log file! (%d)\n", errno);
+            return 2;
+        }
+        atexit(closeLog);
+    }
     // Make sure we're the leading instance that will receive connections (and clean up any other instance's socket file)
     unlink(IOMAN_SOCKET_PATH);
     LOG_INTERNAL("Starting ioman...", 0);
