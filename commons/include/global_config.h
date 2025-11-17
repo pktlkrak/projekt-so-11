@@ -5,3 +5,5 @@
 #define BOAT_WAIT_TIME 10
 #define BOAT_TRIP_TIME 5
 #define BOAT_MAX_CYCLES 500
+
+#define DEFAULT_PERMS 0600

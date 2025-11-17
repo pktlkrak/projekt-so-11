@@ -231,7 +231,7 @@ int main(int argc, char **argv) {
     pthread_create(&bridgeThread, NULL, bridgeCheckingThread, NULL);
 
     // Initialize msgqueue:
-    msgqueue = msgget(myIdentifier, IPC_CREAT | S_IRWXU | S_IRWXG | S_IRWXO);
+    msgqueue = msgget(myIdentifier, IPC_CREAT | DEFAULT_PERMS);
     assert(msgqueue >= 0);
     msg("Dispatcher is ready.");
 

@@ -10,6 +10,7 @@
 #include <pthread.h>
 #include <fcntl.h>
 #include <errno.h>
+#include "global_config.h"
 
 #define IOMAN_SERVER
 #include "ioman.h"
@@ -118,10 +119,10 @@ int main(int argc, char **argv) {
     }
     if(logFile != NULL) {
         if(fileAppend) {
-            logFD = open(logFile, O_APPEND | O_WRONLY | O_CREAT, S_IRWXU | S_IRWXG | S_IRWXO);
+            logFD = open(logFile, O_APPEND | O_WRONLY | O_CREAT, DEFAULT_PERMS);
         } else {
             unlink(logFile);
-            logFD = creat(logFile, S_IRWXU | S_IRWXG | S_IRWXO);
+            logFD = creat(logFile, DEFAULT_PERMS);
         }
         if(logFD < 1) {
             printf("Failed to open the log file! (%d)\n", errno);

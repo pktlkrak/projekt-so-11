@@ -1,9 +1,10 @@
+CC+=-I../commons/include
 all: ioman client.o make_test
 
 ioman: main.o
 	${CC} -o $@ $^
 
-main.o: main.c ioman.h
+main.o: main.c ioman.h ../commons/include/global_config.h
 client.o: ioman_client.c  ioman.h
 	${CC} -c -o client.o ioman_client.c
 

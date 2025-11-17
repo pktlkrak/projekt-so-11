@@ -68,7 +68,7 @@ int main(int argc, char **argv) {
     srand(time(NULL));
     key_t shmKey = rand();
     msg("Boat SHM ID is %08x", shmKey);
-    int shmId = shmget(shmKey, BOAT_SHM_SIZE, IPC_CREAT | S_IRWXU | S_IRWXG | S_IRWXO);
+    int shmId = shmget(shmKey, BOAT_SHM_SIZE, IPC_CREAT | DEFAULT_PERMS);
     self = (struct BoatContents *) shmat(shmId, NULL, 0);
     msg("Boat storage address = %p", self);
     memset(self, 0, sizeof(*self) + BOAT_CAPACITY * sizeof(*self->spaces));
