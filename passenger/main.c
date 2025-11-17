@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
     // iomanTakeoverStdio(false);
 
     // Initialize msgqueue:
-    key_t currentlyBoundDispatcher = atoi(argv[1]);
+    key_t currentlyBoundDispatcher = controlFileToMsgQueueKey(argv[1]);
     int msgqueue = msgget(currentlyBoundDispatcher, 0);
     assert(msgqueue >= 0);
     msg("Passenger%s is ready.", hasBike ? " with bike" : "");
@@ -71,7 +71,7 @@ int main(int argc, char **argv) {
         msgqueue = -1;
         switch(waitForUserSignal()) {
             case SIG_BOAT_REACHED_DESTINATION:
-                msg("The boat has reached its destination. New dispatcher ID is %d", boatSHM->destinationMessageQueue);
+                msg("The boat has reached its destination. New dispatcher ID is %08x", boatSHM->destinationMessageQueue);
                 msgqueue = msgget(boatSHM->destinationMessageQueue, 0);
                 assert(msgqueue >= 0);
                 break;

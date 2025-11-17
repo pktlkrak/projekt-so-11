@@ -2,6 +2,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <sys/msg.h>
 // Message queues:
 #define MSG_QUEUE_MSGSZ sizeof(union _MsgQueueUnion)
 
@@ -63,3 +64,13 @@ struct BoatContents {
     pid_t spaces[0]; // This is an array of `spotCount' elements. This is the simplest way to declare it
     // and C doesn't mind.
 };
+
+#define MSGQUEUE_ID 0xb6
+static inline key_t controlFileToMsgQueueKey(const char *controlFile) {
+    if(access(controlFile, F_OK) == 0) {
+        return ftok(controlFile, MSGQUEUE_ID);
+    }
+
+    printf("Invalid control file given as source for ftok");
+    exit(-2);
+}

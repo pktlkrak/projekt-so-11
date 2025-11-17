@@ -30,6 +30,11 @@ void waitForever() {
     pthread_cond_wait(&cond, &mutex);
 }
 
+int shmId;
+void exitHandler() {
+    shmctl(shmId, IPC_RMID, NULL);
+}
+
 int main(int argc, char **argv) {
     if(argc < 3) {
         printf("Usage: %s <initial dispatcher message queue> <desination dispatcher message queue>\n", *argv);
@@ -37,8 +42,8 @@ int main(int argc, char **argv) {
     }
 
     // Initialize logging:
-    key_t messageQueueKeyA = atoi(argv[1]);
-    key_t messageQueueKeyB = atoi(argv[2]);
+    key_t messageQueueKeyA = controlFileToMsgQueueKey(argv[1]);
+    key_t messageQueueKeyB = controlFileToMsgQueueKey(argv[2]);
     struct IOManInitPacket init = { 6, GREEN };
     char ownName[64];
     memset(ownName, 0, sizeof(ownName));
@@ -70,11 +75,12 @@ int main(int argc, char **argv) {
     self->spotCount = BOAT_CAPACITY;
     self->freeBikeSpots = self->bikeSpotCount = BOAT_BIKE_CAPACITY;
     self->destinationMessageQueue = messageQueueKeyB;
+    atexit(exitHandler);
 
     int cycles = 0;
     // Main loop:
     for(;;) {
-        msg("Arrived to dispatcher %d with %d passengers", msgqueue == msgqueueA ? messageQueueKeyA : messageQueueKeyB, self->nextFreeSpot);
+        msg("Arrived to dispatcher %08x with %d passengers", msgqueue == msgqueueA ? messageQueueKeyA : messageQueueKeyB, self->nextFreeSpot);
         for(int i = 0; i<self->nextFreeSpot; i++) msg("- %d", self->spaces[i]);
         // Tell the current dispatcher that a boat had arrived.
         struct MsgQueueMessage arrivalMessage = { ID_BOAT_ARRIVED, { .incomingBoat = { BOAT_SHM_SIZE, shmKey, getpid() }}};
@@ -89,7 +95,8 @@ int main(int argc, char **argv) {
         // Wait before leaving...
         sigaddset(&earlyLeaveSignal, SIG_BOAT_EARLY_LEAVE);
         sigtimedwait(&earlyLeaveSignal, NULL, &waitTime);
-        if(cycles >= BOAT_MAX_CYCLES || shouldEndTrip) {
+        if(cycles >= BOAT_MAX_CYCLES) raise(SIG_BOAT_TERMINATE);
+        if(shouldEndTrip) {
             msg("This was the boat's last trip. Its simulation is stopped.");
             waitForever();
         }

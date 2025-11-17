@@ -219,7 +219,7 @@ int main(int argc, char **argv) {
     }
 
     // Initialize logging:
-    key_t myIdentifier = atoi(argv[1]);
+    key_t myIdentifier = controlFileToMsgQueueKey(argv[1]);
     struct IOManInitPacket init = { 4, BLUE };
     char ownName[64];
     memset(ownName, 0, sizeof(ownName));
@@ -234,6 +234,9 @@ int main(int argc, char **argv) {
     msgqueue = msgget(myIdentifier, IPC_CREAT | S_IRWXU | S_IRWXG | S_IRWXO);
     assert(msgqueue >= 0);
     msg("Dispatcher is ready.");
+
+    // Delete the message queue on exit:
+    atexit([](void){ msgctl(msgqueue, IPC_RMID, NULL); });
 
     mainHandlingLoop:
     for(;;) {
