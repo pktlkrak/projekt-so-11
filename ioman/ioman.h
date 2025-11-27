@@ -36,3 +36,5 @@ void iomanTakeoverStdio(bool forwardToOriginal);
 #ifdef __cplusplus
 }
 #endif
+
+#define __packed __attribute__((packed))

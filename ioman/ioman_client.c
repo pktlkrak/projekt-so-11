@@ -14,8 +14,12 @@
 #include "ioman.h"
 #define TAKEOVER_LINE_BUFFER_LENGTH 65536
 
-static char FORMAT_BUFFER[65536];
+struct {
+    unsigned long long int timestamp;
+    char textBuffer[65536];
+} __packed MESSAGE_BUFFER;
 static int _socket = 0;
+pthread_mutex_t output = PTHREAD_MUTEX_INITIALIZER;
 
 static int _stderrPipe = 0, _stderrPipeWrite = 0;
 static int _stdoutPipe = 0, _stdoutPipeWrite = 0;
@@ -147,18 +151,31 @@ void iomanConnect(struct IOManInitPacket *packet, const char *name) {
     atexit(_iomanClose);
 }
 
+static unsigned long long int getTimestamp() {
+    unsigned long long int ms = 0;
+    struct timespec spec;
+
+    clock_gettime(CLOCK_REALTIME, &spec);
+    ms += spec.tv_sec * 1000000000ULL;
+    ms += spec.tv_nsec;
+    return ms;
+}
+
 void msg(const char *format, ...) {
+    pthread_mutex_lock(&output);
     if(_socket == 0) {
         printf("You are not connected to the ioman host yet! Call connect() first!\n");
         abort();
     }
     va_list args;
     va_start(args, format);
-    int n = vsnprintf(FORMAT_BUFFER, sizeof(FORMAT_BUFFER), format, args);
-    if(n < sizeof(FORMAT_BUFFER) && n > 0) {
+    int n = vsnprintf(MESSAGE_BUFFER.textBuffer, sizeof(MESSAGE_BUFFER.textBuffer), format, args);
+    MESSAGE_BUFFER.timestamp = getTimestamp();
+    if(n < sizeof(MESSAGE_BUFFER.textBuffer) && n > 0) {
         unsigned int nConv = (unsigned int) n;
         write(_socket, (char *) &nConv, sizeof(nConv));
-        write(_socket, FORMAT_BUFFER, nConv);
+        write(_socket, &MESSAGE_BUFFER, nConv + sizeof(MESSAGE_BUFFER.timestamp));
     }
     va_end(args);
+    pthread_mutex_unlock(&output);
 }
