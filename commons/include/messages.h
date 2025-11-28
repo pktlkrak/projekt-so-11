@@ -11,6 +11,7 @@
 #define ID_GET_OFF_BOAT 3
 #define ID_BOAT_DEPARTS 4
 #define ID_IS_ON_BOAT 5
+#define ID_END_OF_SIM 6
 #define ID_PIDMASK 0x40000000
 
 union _MsgQueueUnion {
@@ -71,6 +72,6 @@ static inline key_t controlFileToMsgQueueKey(const char *controlFile) {
         return ftok(controlFile, MSGQUEUE_ID);
     }
 
-    printf("Invalid control file given as source for ftok");
+    printf("Invalid control file given as source for ftok\n");
     exit(-2);
 }

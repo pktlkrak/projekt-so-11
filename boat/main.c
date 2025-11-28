@@ -24,15 +24,27 @@ void signalHandler(int a) {
     msg("Got the early termination signal!");
 }
 
-void waitForever() {
-    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-    pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-    pthread_cond_wait(&cond, &mutex);
-}
-
 int shmId;
 void exitHandler() {
     shmctl(shmId, IPC_RMID, NULL);
+}
+
+
+
+int msgqueueA;
+int msgqueueB;
+void terminate(int _) {
+    int msgqueue = msgqueueA;
+    struct MsgQueueMessage endMessage = { ID_END_OF_SIM };
+    MSGQUEUE_SEND(&endMessage);
+    msgqueue = msgqueueB;
+    MSGQUEUE_SEND(&endMessage);
+
+    // Free all the passengers on board:
+    for(int i = 0; i<BOAT_CAPACITY; i++) {
+        if(self->spaces[i] != 0) kill(self->spaces[i], SIGTERM);
+    }
+    exit(0);
 }
 
 int main(int argc, char **argv) {
@@ -57,10 +69,11 @@ int main(int argc, char **argv) {
     sigprocmask(SIG_BLOCK, &earlyLeaveSignal, NULL);
     struct timespec waitTime = { BOAT_WAIT_TIME, 0 };
     signal(SIG_BOAT_TERMINATE, signalHandler);
+    signal(SIGTERM, terminate);
 
     // Initialize msgqueue:
-    int msgqueueA = msgget(messageQueueKeyA, 0);
-    int msgqueueB = msgget(messageQueueKeyB, 0);
+    msgqueueA = msgget(messageQueueKeyA, 0);
+    msgqueueB = msgget(messageQueueKeyB, 0);
     int msgqueue = msgqueueA;
     assert(msgqueue >= 0);
     msg("Boat is ready. (Message queue ids are: %d %d)", msgqueueA, msgqueueB);
@@ -68,7 +81,7 @@ int main(int argc, char **argv) {
     srand(time(NULL));
     key_t shmKey = rand();
     msg("Boat SHM ID is %08x", shmKey);
-    int shmId = shmget(shmKey, BOAT_SHM_SIZE, IPC_CREAT | DEFAULT_PERMS);
+    shmId = shmget(shmKey, BOAT_SHM_SIZE, IPC_CREAT | DEFAULT_PERMS);
     self = (struct BoatContents *) shmat(shmId, NULL, 0);
     msg("Boat storage address = %p", self);
     memset(self, 0, sizeof(*self) + BOAT_CAPACITY * sizeof(*self->spaces));
@@ -98,7 +111,7 @@ int main(int argc, char **argv) {
         if(cycles >= BOAT_MAX_CYCLES) raise(SIG_BOAT_TERMINATE);
         if(shouldEndTrip) {
             msg("This was the boat's last trip. Its simulation is stopped.");
-            waitForever();
+            raise(SIGTERM);
         }
         msg("Boat leaving for its %d. journey (out of %d)...", cycles + 1, BOAT_MAX_CYCLES);
         // Leave

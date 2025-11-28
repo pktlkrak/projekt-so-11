@@ -114,6 +114,7 @@ int enqueuedPlaceOnBoat = 0;
 
 void* bridgeCheckingThread(void *) {
     msg("Bridge thread created!");
+    pthread_setcancelstate(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
     for(;;) {
         pthread_cond_wait(&somethingHappenedToTheBridge, &somethingHappenedToTheBridgeMutex);
         if(awaitTermination) return NULL;
@@ -212,6 +213,22 @@ void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
 
 pthread_t bridgeThread;
 
+void terminate(int _) {
+    // Kill the thread
+    pthread_cancel(bridgeThread);
+    // Free everyone from the bridge
+    for(int i = 0; i<bridgeCursor; i++) {
+        if(bridge[i].hasBike) continue;
+        kill(bridge[i].pid, SIGTERM);
+    }
+    // Free every client that waits before the bridge
+    for(const auto &client : passengersWaitingForBridge) kill(client.pid, SIGTERM);
+    // Send the signal to the boat
+    if(boatPid != -1) kill(boatPid, SIGTERM);
+    // Then stop self
+    exit(-1);
+}
+
 int main(int argc, char **argv) {
     if(argc < 2) {
         printf("Usage: %s <initial dispatcher message queue>\n", *argv);
@@ -236,7 +253,10 @@ int main(int argc, char **argv) {
     msg("Dispatcher is ready.");
 
     // Delete the message queue on exit:
-    atexit([](void){ msgctl(msgqueue, IPC_RMID, NULL); });
+    atexit([](void){
+        msgctl(msgqueue, IPC_RMID, NULL);
+    });
+    signal(SIGTERM, terminate);
 
     mainHandlingLoop:
     for(;;) {
@@ -284,7 +304,9 @@ int main(int argc, char **argv) {
                 }
                 ENQ_UNLOCK;
                 break;
-
+            case ID_END_OF_SIM:
+                terminate(1);
+                break;
         }
     }
 }
