@@ -26,7 +26,7 @@ int main(int argc, char **argv) {
     // Initialize logging:
     struct IOManInitPacket init = { 2, RED };
     iomanConnect(&init, "Passenger");
-    // iomanTakeoverStdio(false);
+    iomanTakeoverStdio(false);
 
     // Initialize msgqueue:
     key_t currentlyBoundDispatcher = controlFileToMsgQueueKey(argv[1]);

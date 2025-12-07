@@ -242,7 +242,7 @@ int main(int argc, char **argv) {
     memset(ownName, 0, sizeof(ownName));
     snprintf(ownName, sizeof(ownName), "Dispatcher %08x", myIdentifier);
     iomanConnect(&init, ownName);
-    // iomanTakeoverStdio(false);
+    iomanTakeoverStdio(false);
 
     // Init the bridge thread
     pthread_create(&bridgeThread, NULL, bridgeCheckingThread, NULL);

@@ -61,7 +61,7 @@ int main(int argc, char **argv) {
     memset(ownName, 0, sizeof(ownName));
     snprintf(ownName, sizeof(ownName), "Boat %08x <==> %08x", messageQueueKeyA, messageQueueKeyB);
     iomanConnect(&init, ownName);
-    // iomanTakeoverStdio(false);
+    iomanTakeoverStdio(false);
 
     // Initialize signals
     sigset_t earlyLeaveSignal;
