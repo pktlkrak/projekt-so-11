@@ -1,0 +1,5 @@
+#!/bin/bash
+
+tmux new-session -d './ioman/ioman -l /tmp/proj11_logs'
+tmux split-window -h './controller/main'
+tmux -2 attach-session -d
