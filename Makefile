@@ -1,4 +1,4 @@
-all: ioman passenger dispatcher boat
+all: ioman passenger dispatcher boat controller
 
 ioman:
 	cd ioman && ${MAKE}
@@ -12,10 +12,14 @@ dispatcher:
 boat:
 	cd boat && ${MAKE}
 
-.PHONY: clean ioman passenger dispatcher boat
+controller:
+	cd controller && ${MAKE}
+
+.PHONY: clean ioman passenger dispatcher boat controller
 clean:
 	cd ioman && ${MAKE} clean
 	cd passenger && ${MAKE} clean
 	cd dispatcher && ${MAKE} clean
 	cd boat && ${MAKE} clean
+	cd controller && ${MAKE} clean
 
