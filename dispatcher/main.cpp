@@ -114,6 +114,10 @@ int enqueuedPlaceOnBoat = 0;
 
 void* bridgeCheckingThread(void *) {
     msg("Bridge thread created!");
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGTERM);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
     pthread_setcancelstate(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
     for(;;) {
         pthread_cond_wait(&somethingHappenedToTheBridge, &somethingHappenedToTheBridgeMutex);
@@ -218,13 +222,13 @@ void terminate(int _) {
     pthread_cancel(bridgeThread);
     // Free everyone from the bridge
     for(int i = 0; i<bridgeCursor; i++) {
-        if(bridge[i].hasBike) continue;
+        if(bridge[i].hasBike || bridge[i].pid == 0) continue;
         kill(bridge[i].pid, SIGTERM);
     }
     // Free every client that waits before the bridge
-    for(const auto &client : passengersWaitingForBridge) kill(client.pid, SIGTERM);
+    for(const auto &client : passengersWaitingForBridge) if(client.pid) kill(client.pid, SIGTERM);
     // Send the signal to the boat
-    if(boatPid != -1) kill(boatPid, SIGTERM);
+    if(boatPid != -1 && boatPid != 0) kill(boatPid, SIGTERM);
     // Then stop self
     exit(-1);
 }

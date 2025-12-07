@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <signal.h>
 
 #include "ioman.h"
 #define TAKEOVER_LINE_BUFFER_LENGTH 65536
@@ -56,6 +57,11 @@ static void _iomanClose() {
 
 static inline int max(int a, int b) { return a > b ? a : b; }
 static void *_iomanTakeoverThread(void *) {
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGTERM);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+
     fd_set readFDs;
     for(;;) {
         FD_ZERO(&readFDs);

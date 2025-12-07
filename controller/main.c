@@ -11,7 +11,7 @@ void createDispatcherFileName(int key, char *buffer, int n) {
     snprintf(buffer, n, "/tmp/ex11_%d.msg", key);
 }
 
-#define F_EXEC(a, ...) if(!(pid = fork())) execl(a, a, __VA_ARGS__, NULL)
+#define F_EXEC(a, ...) do { if(!(pid = fork())) execl(a, a, __VA_ARGS__, NULL); } while(0)
 #define WAIT_FOR_COMPLETION waitpid(pid, NULL, 0)
 
 pid_t lastBoatPid;
@@ -118,6 +118,7 @@ void killBoat(){
 
 const char *MENU =
     "=== Ex. 11 - Simulation Menu ===\n"
+    "0. Exit\n"
     "1. Start the overload simulation\n"
     "2. Manual control - spawn boat and endpoints, then ask for further instructions.\n> "
 ;
@@ -125,7 +126,7 @@ const char *MENU =
 void overloadSimulation() {
     int howManyPassengersPerEndpoint = 0;
     printf("How many passengers per endpoint (50%% chance of them having a bike)? ");
-    scanf("%d\n", &howManyPassengersPerEndpoint);
+    scanf("%d", &howManyPassengersPerEndpoint);
     startDispatcher(1234);
     startDispatcher(5678);
     startBoat(1234, 5678);
@@ -133,8 +134,10 @@ void overloadSimulation() {
         startPassenger(1234, rand() & 1);
         startPassenger(5678, rand() & 1);
     }
-    printf("Please press any key to stop the simulation");
-    getc(stdin);
+    // Clear stdin buffer.
+    while ((getchar()) != '\n');
+    printf("Please press enter to stop the simulation\n");
+    getchar();
     killBoat();
 }
 
@@ -161,8 +164,6 @@ void manualControl() {
 }
 
 int main() {
-    signal(SIGCHLD, SIG_IGN);
-
     printf(
         "Simulation parameters:\n"
         "K (Bridge capacity): %d\n"
@@ -186,6 +187,7 @@ int main() {
         if(scanf("%d", &choice) != 1) goto badCase;
 
         switch(choice) {
+            case 0: return 0;
             case 1:
                 overloadSimulation();
                 break;
