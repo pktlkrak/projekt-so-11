@@ -26,6 +26,7 @@ void signalHandler(int a) {
 
 int shmId;
 void exitHandler() {
+    shmdt(self);
     shmctl(shmId, IPC_RMID, NULL);
 }
 
@@ -108,8 +109,7 @@ int main(int argc, char **argv) {
         // Wait before leaving...
         sigaddset(&earlyLeaveSignal, SIG_BOAT_EARLY_LEAVE);
         sigtimedwait(&earlyLeaveSignal, NULL, &waitTime);
-        if(cycles >= BOAT_MAX_CYCLES) raise(SIG_BOAT_TERMINATE);
-        if(shouldEndTrip) {
+        if(shouldEndTrip || cycles >= BOAT_MAX_CYCLES) {
             msg("This was the boat's last trip. Its simulation is stopped.");
             raise(SIGTERM);
         }
