@@ -165,8 +165,8 @@ void evictEveryoneFromBridge() {
         for(int i = bridgeCursor - 1; i >= 0; i--) {
             if(bridge[i].hasBike) continue;
             msg("Evicting %d from the bridge", bridge[i].pid);
-            MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | bridge[i].pid, { .putOnBoat = { 0, 0, -1 }}};
-            MSGQUEUE_SEND(&msgPlaceOnBoat);
+            MsgQueueMessage msgEvict = { ID_PIDMASK | bridge[i].pid, { .putOnBoat = { 0, 0, -1 }}};
+            MSGQUEUE_SEND(&msgEvict);
         }
         bridgeCursor = 0; // Bridge empty.
     }
@@ -186,16 +186,15 @@ void boatLeaves() {
 }
 
 void acceptPeopleOntoBridge() {
-    BRIDGE_LOCK;
     while(!passengersWaitingForBridge.empty() && bridgeCursor < BRIDGE_CAPACITY) {
         if(!moveWaitingPassengerOntoBridge()) break;
     }
     // Start packing people onto the boat:
     BRIDGE_CHANGED;
-    BRIDGE_UNLOCK;
 }
 
 void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
+    BRIDGE_LOCK;
     boatSHMSize = boat->boatSHMSize;
     boatSHMKey = boat->boatSHMKey;
     boatPid = boat->boatPid;
@@ -211,8 +210,8 @@ void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
         msg("The boat has arrived empty - people can enter the bridge again.");
         acceptPeopleOntoBridge();
         boatLocked = false;
-        BRIDGE_CHANGED;
     }
+    BRIDGE_UNLOCK;
 }
 
 pthread_t bridgeThread;
@@ -294,7 +293,9 @@ int main(int argc, char **argv) {
                     // Make this show in the logs that the people get accepted only after the others have left the boat.
                     sleep(1);
                     msg("The boat has no passengers left, people can enter the bridge again.");
+                    BRIDGE_LOCK;
                     acceptPeopleOntoBridge();
+                    BRIDGE_UNLOCK;
                 }
                 break;
             case ID_IS_ON_BOAT:
