@@ -14,6 +14,24 @@ void createDispatcherFileName(int key, char *buffer, int n) {
 #define F_EXEC(a, ...) do { if(!(pid = fork())) execl(a, a, __VA_ARGS__, NULL); } while(0)
 #define WAIT_FOR_COMPLETION waitpid(pid, NULL, 0)
 
+pthread_mutex_t passengerCountMutex = PTHREAD_MUTEX_INITIALIZER;
+int passengerCount = 0;
+
+static inline int getPassengerCount() {
+    pthread_mutex_lock(&passengerCountMutex);
+    int ret = passengerCount;
+    pthread_mutex_unlock(&passengerCountMutex);
+    return ret;
+}
+
+static inline void passengerCountOp(int change) {
+    pthread_mutex_lock(&passengerCountMutex);
+    passengerCount += change;
+    pthread_mutex_unlock(&passengerCountMutex);
+}
+
+static inline int min(int a, int b) { return a > b ? b : a; }
+
 pid_t lastBoatPid;
 
 struct DispatcherInit {
@@ -92,11 +110,13 @@ void *_startPassenger(void *_init) {
     char keyname[64];
     createDispatcherFileName(init->boundDispatcher, keyname, sizeof(keyname));
     // printf("Starting passenger bound to dispatcher %s\n", keyname);
+    passengerCountOp(1);
     if(init->hasBike) F_EXEC("./passenger/main", keyname, "1");
     else F_EXEC("./passenger/main", keyname);
 
     // printf("Started passenger - PID is %d\n", pid);
     WAIT_FOR_COMPLETION;
+    passengerCountOp(-1);
     free(init);
     return NULL;
 }
@@ -130,6 +150,8 @@ void overloadSimulation() {
     startDispatcher(1234);
     startDispatcher(5678);
     startBoat(1234, 5678);
+    howManyPassengersPerEndpoint = min(howManyPassengersPerEndpoint, (MAX_PASSENGERS - getPassengerCount() - 1) / 2);
+    printf("Spawning %d passengers...\n", howManyPassengersPerEndpoint * 2);
     for(int i = 0; i<howManyPassengersPerEndpoint; i++) {
         startPassenger(1234, rand() & 1);
         startPassenger(5678, rand() & 1);
@@ -156,6 +178,8 @@ void manualControl() {
         }
         if(ep == 0 && count == 0 && bike == 0) break;
         ep = ep ? 5678 : 1234;
+        count = min(count, MAX_PASSENGERS - getPassengerCount());
+        printf("Spawning %d passengers...\n", count);
         for(int i = 0; i<count; i++) {
             startPassenger(ep, bike);
         }
