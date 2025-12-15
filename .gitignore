@@ -7,3 +7,5 @@ dispatcher/main
 controller/main
 boat/main
 local/**
+docs/report.pdf
+docs/codelinks.json
