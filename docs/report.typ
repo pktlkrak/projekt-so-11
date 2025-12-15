@@ -368,7 +368,11 @@ Przeprowadziłem go poprzez ustalenie wartości BOAT_CAPACITY = 10, BOAT_BIKE_CA
 Stworzyłem 10 pasażerów z rowerem, oraz jednego bez. Na łodzi podczas pierwszej podróży będzie, zgodnie z oczekiwaniem, bedzie dwóch pasażerów - jeden z rowerem,
 drugi bez.
 
-=== Test 3: 
+=== Test 3: Sygnały uśpienia
+
+#show link: underline
+Był to test, który wywołał najwięcej chaosu w mojej aplikacji, ponieważ aplikacje nie obsługiwały poprawnie błędu EINTR.
+Błędy te zostały poprawione w poprawce #link("https://github.com/pktlkrak/projekt-so-11/commit/345f9ac3735e0f029c39b5ccd32f5a65e65fd872")[345f9ac].
 
 === Test 4: Test sygnału wczesnego zatrzymania podczas załadunku
 
