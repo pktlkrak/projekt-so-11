@@ -31,6 +31,7 @@ union _MsgQueueUnion {
         size_t boatSHMSize;
         key_t boatSHMKey;
         pid_t boatPid;
+        bool terminate;
     } incomingBoat;
 };
 

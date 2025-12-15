@@ -34,6 +34,7 @@ int boatSHMID = -1;
 size_t boatSHMSize = -1;
 pid_t boatPid;
 bool boatLocked = false;
+bool boatTerminating = false;
 
 #define BRIDGE_LOCK pthread_mutex_lock(&bridgeMutex)
 #define BRIDGE_UNLOCK pthread_mutex_unlock(&bridgeMutex)
@@ -198,6 +199,7 @@ void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
     boatSHMSize = boat->boatSHMSize;
     boatSHMKey = boat->boatSHMKey;
     boatPid = boat->boatPid;
+    boatTerminating = boat->terminate;
     boatSHMID = shmget(boatSHMKey, boatSHMSize, 0);
     assert(boatSHMID >= 0);
     dockedBoat = (struct BoatContents *) shmat(boatSHMID, NULL, 0);
@@ -285,17 +287,21 @@ int main(int argc, char **argv) {
                 msg("Passenger %d asked to be let off the boat.", inbound.contents.getOffBoat.pid);
                 kill(inbound.contents.getOffBoat.pid, SIG_GET_OFF_BOAT);
                 if(--dockedBoat->nextFreeSpot == 0) {
-                    // Reset the boat state. Start accepting passengers.
-                    memset(dockedBoat->spaces, 0, sizeof(pid_t) * dockedBoat->spotCount);
-                    dockedBoat->freeBikeSpots = dockedBoat->bikeSpotCount;
-                    dockedBoat->destinationMessageQueue = -1;
-                    boatLocked = false;
-                    // Make this show in the logs that the people get accepted only after the others have left the boat.
-                    sleep(1);
-                    msg("The boat has no passengers left, people can enter the bridge again.");
-                    BRIDGE_LOCK;
-                    acceptPeopleOntoBridge();
-                    BRIDGE_UNLOCK;
+                    if(boatTerminating) {
+                        kill(boatPid, SIGTERM);
+                    } else {
+                        // Reset the boat state. Start accepting passengers.
+                        memset(dockedBoat->spaces, 0, sizeof(pid_t) * dockedBoat->spotCount);
+                        dockedBoat->freeBikeSpots = dockedBoat->bikeSpotCount;
+                        dockedBoat->destinationMessageQueue = -1;
+                        boatLocked = false;
+                        // Make this show in the logs that the people get accepted only after the others have left the boat.
+                        sleep(1);
+                        msg("The boat has no passengers left, people can enter the bridge again.");
+                        BRIDGE_LOCK;
+                        acceptPeopleOntoBridge();
+                        BRIDGE_UNLOCK;
+                    }
                 }
                 break;
             case ID_IS_ON_BOAT:

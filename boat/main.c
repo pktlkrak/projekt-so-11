@@ -14,6 +14,7 @@
 #include <pthread.h>
 
 #define BOAT_SHM_SIZE (sizeof(struct BoatContents) + BOAT_CAPACITY * sizeof(pid_t))
+#define WAIT_FOREVER sleep(0xFFFFFFFFU)
 
 struct BoatContents *self;
 int shmFd;
@@ -88,7 +89,7 @@ int main(int argc, char **argv) {
     memset(self, 0, sizeof(*self) + BOAT_CAPACITY * sizeof(*self->spaces));
     self->spotCount = BOAT_CAPACITY;
     self->freeBikeSpots = self->bikeSpotCount = BOAT_BIKE_CAPACITY;
-    self->destinationMessageQueue = messageQueueKeyB;
+    self->destinationMessageQueue = messageQueueKeyA;
     atexit(exitHandler);
 
     int cycles = 0;
@@ -97,7 +98,7 @@ int main(int argc, char **argv) {
         msg("Arrived to dispatcher %08x with %d passengers", msgqueue == msgqueueA ? messageQueueKeyA : messageQueueKeyB, self->nextFreeSpot);
         for(int i = 0; i<self->nextFreeSpot; i++) msg("- %d", self->spaces[i]);
         // Tell the current dispatcher that a boat had arrived.
-        struct MsgQueueMessage arrivalMessage = { ID_BOAT_ARRIVED, { .incomingBoat = { BOAT_SHM_SIZE, shmKey, getpid() }}};
+        struct MsgQueueMessage arrivalMessage = { ID_BOAT_ARRIVED, { .incomingBoat = { BOAT_SHM_SIZE, shmKey, getpid(), 0 }}};
         MSGQUEUE_SEND(&arrivalMessage);
         // And tell all our passengers too:
         msg("Notifying all passengers that the boat has arrived");
@@ -111,7 +112,19 @@ int main(int argc, char **argv) {
         sigtimedwait(&earlyLeaveSignal, NULL, &waitTime);
         if(shouldEndTrip || cycles >= BOAT_MAX_CYCLES) {
             msg("This was the boat's last trip. Its simulation is stopped.");
-            raise(SIGTERM);
+            if(self->nextFreeSpot == 0) {
+                raise(SIGTERM);
+            }
+
+            struct MsgQueueMessage terminationMessage = { ID_BOAT_ARRIVED, { .incomingBoat = { BOAT_SHM_SIZE, shmKey, getpid(), 1 }}};
+            MSGQUEUE_SEND(&terminationMessage);
+            for(int i = 0; i<self->nextFreeSpot; i++) {
+                msg("Sending 'leave' signal to pid %d", self->spaces[i]);
+                kill(self->spaces[i], SIG_BOAT_REACHED_DESTINATION);
+                self->spaces[i] = 0;
+            }
+            // Wait for SIGTERM.
+            WAIT_FOREVER;
         }
         msg("Boat leaving for its %d. journey (out of %d)...", cycles + 1, BOAT_MAX_CYCLES);
         // Leave
