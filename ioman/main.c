@@ -186,7 +186,6 @@ void *singleSocketThread(void *_socketFD) {
     LOG_INTERNAL("Client %s has disconnected!", name);
     close(socketFD);
     if(name) free(name);
-    pthread_exit(NULL);
 }
 
 #undef CHECK_STATUS
