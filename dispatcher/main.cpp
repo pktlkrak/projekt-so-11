@@ -211,6 +211,7 @@ void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
     } else {
         msg("The boat has arrived empty - people can enter the bridge again.");
         acceptPeopleOntoBridge();
+        kill(boatPid, SIG_BOAT_ACCEPTED_TO_DISP);
         boatLocked = false;
     }
     BRIDGE_UNLOCK;
@@ -301,6 +302,7 @@ int main(int argc, char **argv) {
                         BRIDGE_LOCK;
                         acceptPeopleOntoBridge();
                         BRIDGE_UNLOCK;
+                        kill(boatPid, SIG_BOAT_ACCEPTED_TO_DISP);
                     }
                 }
                 break;

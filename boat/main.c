@@ -66,7 +66,7 @@ int main(int argc, char **argv) {
     iomanTakeoverStdio(false);
 
     // Initialize signals
-    sigset_t earlyLeaveSignal;
+    sigset_t earlyLeaveSignal, waitForAcceptance;
     sigaddset(&earlyLeaveSignal, SIG_BOAT_EARLY_LEAVE);
     sigprocmask(SIG_BLOCK, &earlyLeaveSignal, NULL);
     struct timespec waitTime = { BOAT_WAIT_TIME, 0 };
@@ -107,6 +107,11 @@ int main(int argc, char **argv) {
             msg("Sending signal to pid %d", self->spaces[i]);
             kill(self->spaces[i], SIG_BOAT_REACHED_DESTINATION);
         }
+        // Wait for the dispatcher to accept us.
+        sigaddset(&waitForAcceptance, SIG_BOAT_ACCEPTED_TO_DISP);
+        int _sig;
+        sigwait(&waitForAcceptance, &_sig);
+
         // Wait before leaving...
         sigaddset(&earlyLeaveSignal, SIG_BOAT_EARLY_LEAVE);
         sigtimedwait(&earlyLeaveSignal, NULL, &waitTime);

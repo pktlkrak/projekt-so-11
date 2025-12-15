@@ -51,7 +51,10 @@ int main(int argc, char **argv) {
                 break;
         }
         struct MsgQueueMessage placeOnBoatMessage;
-        MSGQUEUE_RECV_C_DIRECT(&placeOnBoatMessage);
+        if(!MSGQUEUE_RECV_C_DIRECT(&placeOnBoatMessage)) {
+            msg("I've fallen asleep with the ticket in hand. Placing self back in queue.");
+            continue waitingForBridge;
+        }
         int boatSHMKey = placeOnBoatMessage.contents.putOnBoat.boatSHMKey;
         size_t boatSHMSize = placeOnBoatMessage.contents.putOnBoat.boatSHMSize;
         int mySpotIndex = placeOnBoatMessage.contents.putOnBoat.spotIndex;

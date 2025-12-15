@@ -62,9 +62,11 @@ Sygnały wykorzystywane są do powiadamiania pasażerów i łodzi o zmianie stan
         edge("-|>"),
         node((0, 3), [Poinformuj wszystkich pasażerów o końcu podróży]),
         edge("-|>"),
-        node((0, 4), [Poczekaj na sygnał odjazdu od dyspozytora, lub przez `T1` sekund]),
+        node((0, 4), [Poczekaj na sygnał akceptacji przypływu od dyspozytora]),
         edge("-|>"),
-        node((0, 5), [
+        node((0, 5), [Poczekaj na sygnał odjazdu od dyspozytora, lub przez `T1` sekund]),
+        edge("-|>"),
+        node((0, 6), [
 
 
             Czy łódź powinna skończyć symulację \
@@ -72,17 +74,17 @@ Sygnały wykorzystywane są do powiadamiania pasażerów i łodzi o zmianie stan
         
         ], shape: diamond),
         edge("r,d", "-|>", [Tak]),
-        node((1, 6), [
+        node((1, 7), [
             Zakończ symulację\
             (raise SIGTERM)
         ]),
-        edge((0, 5), "d", "-|>", [Nie]),
-        node((0, 6), [Wyślij wiadomość o odjeździe do dyspozytora]),
+        edge((0, 6), "d", "-|>", [Nie]),
+        node((0, 7), [Wyślij wiadomość o odjeździe do dyspozytora]),
         edge("-|>"),
-        node((0, 7), [Poczekaj przez czas `T2`]),
+        node((0, 8), [Poczekaj przez czas `T2`]),
         edge("-|>"),
-        node((0, 8), [Przełącz na przeciwny dyspozytor]),
-        edge("l,u,u,u,u,u,u,r", "-|>")
+        node((0, 9), [Przełącz na przeciwny dyspozytor]),
+        edge("l,u,u,u,u,u,u,u,r", "-|>")
         
     )
 ])
@@ -198,6 +200,8 @@ Sygnały wykorzystywane są do powiadamiania pasażerów i łodzi o zmianie stan
         edge((-1, 6), (-1, 6.5), "l,l,u", "-"),
         edge((-1.55, 5), (-1.5, 5), "d,d", "-|>", [Nie]),
         node((-1, 7), [Zezwól pasażerom na wejście na most]),
+        edge("-|>"),
+        node((-1, 8), [Wyślij łodzi sygnał akceptacji]),
         edge("l,l,u", "-"),
 
 
@@ -228,7 +232,7 @@ Sygnały wykorzystywane są do powiadamiania pasażerów i łodzi o zmianie stan
         node((1, 6), [
             Czy zero?
         ], shape: diamond),
-        edge("r,d,d,l", "-", [Nie], label-pos: (0, 0.5)),
+        edge("r,d,d,d,l", "-", [Nie], label-pos: (0, 0.5)),
         edge((1, 6), "d", "-|>", [Tak]),
         node((1, 7), "Wyczyść łódź"),
         edge("l,l", "-|>"),
@@ -252,7 +256,7 @@ Sygnały wykorzystywane są do powiadamiania pasażerów i łodzi o zmianie stan
             Wyślij łodzi sygnał\
             wczesnego odpływu
         ]),
-        edge((3, 5), "d,d,d,l,l,l,l,l,l,u,u,u,u,u,u,r,r,r", "-|>"),
+        edge((3, 5), "d,d,d,d,l,l,l,l,l,l,u,u,u,u,u,u,u,r,r,r", "-|>"),
         edge((0, 2), (2, 2), "-|>"),
         node((2, 2), [
             Zakończ symulację

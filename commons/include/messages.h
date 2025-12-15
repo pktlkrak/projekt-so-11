@@ -41,8 +41,24 @@ struct MsgQueueMessage {
 };
 
 #define MSGQUEUE_SEND(x) if(-1 == msgsnd(msgqueue, x, MSG_QUEUE_MSGSZ, 0)) { msg("Failed to MSGQUEUE_SEND! Errno: %d", errno); abort(); }
-#define MSGQUEUE_RECV_GLOBAL(x) if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, -ID_PIDMASK, 0)) { msg("Failed to MSGQUEUE_RECV_GLOBAL! Errno: %d", errno); abort(); }
-#define MSGQUEUE_RECV_C_DIRECT(x) if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, getpid() | ID_PIDMASK, 0)) { msg("Failed to MSGQUEUE_RECV_C_DIRECT! Errno: %d", errno); abort(); }
+#define MSGQUEUE_RECV_GLOBAL(x) do { \
+    _e: if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, -ID_PIDMASK, 0)) { \
+            if(errno == EINTR) goto _e; \
+            msg("Failed to MSGQUEUE_RECV_GLOBAL! Errno: %d", errno); \
+            abort(); \
+        } \
+    } while(0)
+#define MSGQUEUE_RECV_C_DIRECT(x) impl_MSGQUEUE_RECV_C_DIRECT(msgqueue, x)
+
+inline static bool impl_MSGQUEUE_RECV_C_DIRECT(int msgqueue, void *x) {
+    if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, getpid() | ID_PIDMASK, 0)) {
+        if(errno == EINTR) {
+            return false;
+        }
+        msg("Failed to MSGQUEUE_RECV_C_DIRECT! Errno: %d", errno); abort();
+    }
+    return true;
+}
 
 // Signals:
 
@@ -52,6 +68,7 @@ struct MsgQueueMessage {
 #define SIG_GET_OFF_BOAT SIGUSR2
 #define SIG_BOAT_REACHED_DESTINATION SIGUSR1
 #define SIG_BOAT_EARLY_LEAVE SIGUSR1
+#define SIG_BOAT_ACCEPTED_TO_DISP SIGUSR1
 #define SIG_BOAT_TERMINATE SIGUSR2
 
 

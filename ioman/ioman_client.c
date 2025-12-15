@@ -60,6 +60,8 @@ static void *_iomanTakeoverThread(void *) {
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGTERM);
+    sigaddset(&set, SIGUSR1);
+    sigaddset(&set, SIGUSR2);
     pthread_sigmask(SIG_BLOCK, &set, NULL);
 
     fd_set readFDs;
