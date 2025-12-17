@@ -300,7 +300,6 @@ int main(int argc, char **argv) {
                         // Reset the boat state. Start accepting passengers.
                         memset(dockedBoat->spaces, 0, sizeof(pid_t) * dockedBoat->spotCount);
                         dockedBoat->freeBikeSpots = dockedBoat->bikeSpotCount;
-                        dockedBoat->destinationMessageQueue = -1;
                         boatLocked = false;
                         // Make this show in the logs that the people get accepted only after the others have left the boat.
                         sleep(1);
