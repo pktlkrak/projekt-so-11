@@ -65,11 +65,11 @@ int main(int argc, char **argv) {
             msg("The dispatcher told me to get off the bridge.");
             continue waitingForBridge;
         }
-        MSGQUEUE_SEND(&confMessage);
         msg("The dispatcher has informed me that I should be placed on the boat.");
         int boatSHMId = shmget(boatSHMKey, boatSHMSize, 0);
         struct BoatContents *boatSHM = shmat(boatSHMId, NULL, 0);
         boatSHM->spaces[mySpotIndex] = getpid();
+        MSGQUEUE_SEND(&confMessage);
         struct MsgQueueMessage placedOnBoatMessage = { ID_IS_ON_BOAT };
         MSGQUEUE_SEND(&placedOnBoatMessage);
 
