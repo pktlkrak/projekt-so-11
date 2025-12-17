@@ -135,6 +135,9 @@ int main(int argc, char **argv) {
         // Leave
         struct MsgQueueMessage leaveMessage = { ID_BOAT_DEPARTS };
         MSGQUEUE_SEND(&leaveMessage);
+        // Wait for the confirmation from the boat.
+        struct MsgQueueMessage confMessage;
+        MSGQUEUE_RECV_C_DIRECT(&confMessage);
         // Wait for the duration of the transit...
         sleep(BOAT_TRIP_TIME);
         if(msgqueue == msgqueueA) {

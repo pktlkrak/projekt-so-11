@@ -149,11 +149,12 @@ void* bridgeCheckingThread(void *) {
                     }
                 }
                 msg("Signaling %d to take spot %d on the boat.", toPlaceOnBoat.pid, dockedBoat->nextFreeSpot);
-                MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMKey, dockedBoat->nextFreeSpot++ }}};
+                MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMKey, dockedBoat->nextFreeSpot }}};
                 // Tell the passenger to take the designated space on the boat:
                 MSGQUEUE_SEND(&msgPlaceOnBoat);
                 MSGQUEUE_WAITCONF(toPlaceOnBoat.pid);
                 ++enqueuedPlaceOnBoat;
+                ++dockedBoat->nextFreeSpot;
             }
             ENQ_UNLOCK;
         }
@@ -185,6 +186,9 @@ void boatLeaves() {
     boatSHMKey = -1;
 
     evictEveryoneFromBridge();
+    // Confirm - the boat can leave now.
+    MsgQueueMessage boatConfirm = { ID_PIDMASK | boatPid };
+    MSGQUEUE_SEND(&boatConfirm);
     BRIDGE_UNLOCK;
 }
 
@@ -309,7 +313,10 @@ int main(int argc, char **argv) {
                 }
                 break;
             case ID_IS_ON_BOAT:
-                assert(dockedBoat);
+                if(!dockedBoat) {
+                    // The boat is leaving anyway. Do not check if this was the last spot.
+                    break;
+                }
                 ENQ_LOCK;
                 assert(enqueuedPlaceOnBoat > 0);
                 if(--enqueuedPlaceOnBoat == 0 && dockedBoat->nextFreeSpot == dockedBoat->spotCount) {
