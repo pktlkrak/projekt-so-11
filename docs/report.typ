@@ -389,8 +389,6 @@ Po otrzymaniu sygnału wczesnego zatrzymania podczas trasy,
 Test ten został zdany jako część testu pierwszego.
 Dzięki temu sygnałowi test pierwszy zajął bardzo mało czasu.
 
-* TODO *
-
 == Istotne fragmenty kodu
 
 #let codeLinks = json("codelinks.json")
@@ -472,3 +470,20 @@ dzięki czemu w ramach jednej aplikacji wszystkie wiadomości wysyłane są w od
 
 - #coderef(31, text: `socket()`), #coderef(32, text: `bind()`), #coderef(33, text: `listen()`), #coderef(34, text: `accept()`) - Funkcje wykorzystywane przez serwer logów, które pozwalają mu nasłuchiwać na połączenia przychodzące od aplikacji klienckich
 - #coderef(35, text: `connect()`) - Funkcja ta umożliwia bibliotece klienckiej na połączenie z serwerem logów
+
+
+== Środowisko
+
+```
+OS: Arch Linux x86_64
+Kernel: Linux 6.17.9-arch1-1
+$ gcc -v
+Using built-in specs.
+COLLECT_GCC=gcc
+COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-pc-linux-gnu/15.2.1/lto-wrapper
+Target: x86_64-pc-linux-gnu
+Configured with: /build/gcc/src/gcc/configure --enable-languages=ada,c,c++,d,fortran,go,lto,m2,objc,obj-c++,rust,cobol --enable-bootstrap --prefix=/usr --libdir=/usr/lib --libexecdir=/usr/lib --mandir=/usr/share/man --infodir=/usr/share/info --with-bugurl=https://gitlab.archlinux.org/archlinux/packaging/packages/gcc/-/issues --with-build-config=bootstrap-lto --with-linker-hash-style=gnu --with-system-zlib --enable-__cxa_atexit --enable-cet=auto --enable-checking=release --enable-clocale=gnu --enable-default-pie --enable-default-ssp --enable-gnu-indirect-function --enable-gnu-unique-object --enable-libstdcxx-backtrace --enable-link-serialization=1 --enable-linker-build-id --enable-lto --enable-multilib --enable-plugin --enable-shared --enable-threads=posix --disable-libssp --disable-libstdcxx-pch --disable-werror
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 15.2.1 20251112 (GCC) 
+```
