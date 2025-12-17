@@ -36,6 +36,7 @@ int main(int argc, char **argv) {
 
     // Actual client loop:
     waitingForBridge: for(;;) {
+        struct MsgQueueMessage confMessage = { ID_PIDMASK | ID_CONFMASK | getpid(), {  } };
         struct MsgQueueMessage initMessage = {
             ID_INITIALIZE_PUT_ON_BRIDGE, { .putOnBridge = { getpid(), hasBike }}
         };
@@ -50,6 +51,8 @@ int main(int argc, char **argv) {
                 return -2;
                 break;
         }
+        MSGQUEUE_SEND(&confMessage);
+
         struct MsgQueueMessage placeOnBoatMessage;
         if(!MSGQUEUE_RECV_C_DIRECT(&placeOnBoatMessage)) {
             msg("I've fallen asleep with the ticket in hand. Placing self back in queue.");
@@ -62,6 +65,7 @@ int main(int argc, char **argv) {
             msg("The dispatcher told me to get off the bridge.");
             continue waitingForBridge;
         }
+        MSGQUEUE_SEND(&confMessage);
         msg("The dispatcher has informed me that I should be placed on the boat.");
         int boatSHMId = shmget(boatSHMKey, boatSHMSize, 0);
         struct BoatContents *boatSHM = shmat(boatSHMId, NULL, 0);

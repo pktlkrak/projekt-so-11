@@ -61,6 +61,7 @@ bool putPassengerOnBridge(const Passenger &passenger) {
         bridgeCursor++;
     }
     kill(passenger.pid, SIG_PLACE_ON_BRIDGE);
+    MSGQUEUE_WAITCONF(passenger.pid);
     return true;
 }
 
@@ -151,6 +152,7 @@ void* bridgeCheckingThread(void *) {
                 MsgQueueMessage msgPlaceOnBoat = { ID_PIDMASK | toPlaceOnBoat.pid, { .putOnBoat = { boatSHMSize, boatSHMKey, dockedBoat->nextFreeSpot++ }}};
                 // Tell the passenger to take the designated space on the boat:
                 MSGQUEUE_SEND(&msgPlaceOnBoat);
+                MSGQUEUE_WAITCONF(toPlaceOnBoat.pid);
                 ++enqueuedPlaceOnBoat;
             }
             ENQ_UNLOCK;
@@ -172,7 +174,7 @@ void evictEveryoneFromBridge() {
         bridgeCursor = 0; // Bridge empty.
     }
 }
-// DEADLOCKS
+
 void boatLeaves() {
     BRIDGE_LOCK;
     assert(dockedBoat);
@@ -284,7 +286,7 @@ int main(int argc, char **argv) {
                 assert(dockedBoat->nextFreeSpot > 0);
                 assert(boatLocked);
                 // Use this field as a counter only. All passengers must leave.
-                // TODO: Put this passenger on the bridge temporarily?:
+                // TODO?: Put this passenger on the bridge temporarily?:
                 msg("Passenger %d asked to be let off the boat.", inbound.contents.getOffBoat.pid);
                 kill(inbound.contents.getOffBoat.pid, SIG_GET_OFF_BOAT);
                 if(--dockedBoat->nextFreeSpot == 0) {

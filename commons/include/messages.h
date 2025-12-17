@@ -13,6 +13,7 @@
 #define ID_IS_ON_BOAT 5
 #define ID_END_OF_SIM 6
 #define ID_PIDMASK 0x40000000
+#define ID_CONFMASK 0x20000000
 
 union _MsgQueueUnion {
     struct {
@@ -42,16 +43,17 @@ struct MsgQueueMessage {
 
 #define MSGQUEUE_SEND(x) if(-1 == msgsnd(msgqueue, x, MSG_QUEUE_MSGSZ, 0)) { msg("Failed to MSGQUEUE_SEND! Errno: %d", errno); abort(); }
 #define MSGQUEUE_RECV_GLOBAL(x) do { \
-    _e: if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, -ID_PIDMASK, 0)) { \
+    _e: if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, -ID_CONFMASK, 0)) { \
             if(errno == EINTR) goto _e; \
             msg("Failed to MSGQUEUE_RECV_GLOBAL! Errno: %d", errno); \
             abort(); \
         } \
     } while(0)
-#define MSGQUEUE_RECV_C_DIRECT(x) impl_MSGQUEUE_RECV_C_DIRECT(msgqueue, x)
+#define MSGQUEUE_RECV_C_DIRECT(x) impl_MSGQUEUE_RECV_C_DIRECT(msgqueue, getpid(), x)
+#define MSGQUEUE_WAITCONF(pid) do { MsgQueueMessage resp; impl_MSGQUEUE_RECV_C_DIRECT(msgqueue, pid | ID_CONFMASK, &resp); } while(0);
 
-inline static bool impl_MSGQUEUE_RECV_C_DIRECT(int msgqueue, void *x) {
-    if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, getpid() | ID_PIDMASK, 0)) {
+inline static bool impl_MSGQUEUE_RECV_C_DIRECT(int msgqueue, pid_t pid, void *x) {
+    if(-1 == msgrcv(msgqueue, x, MSG_QUEUE_MSGSZ, pid | ID_PIDMASK, 0)) {
         if(errno == EINTR) {
             return false;
         }
