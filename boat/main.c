@@ -100,6 +100,9 @@ int main(int argc, char **argv) {
         // Tell the current dispatcher that a boat had arrived.
         struct MsgQueueMessage arrivalMessage = { ID_BOAT_ARRIVED, { .incomingBoat = { BOAT_SHM_SIZE, shmKey, getpid(), 0 }}};
         MSGQUEUE_SEND(&arrivalMessage);
+        struct MsgQueueMessage confMessage;
+        // Wait for the confirmation from the dispatcher.
+        MSGQUEUE_RECV_C_DIRECT(&confMessage);
         // And tell all our passengers too:
         msg("Notifying all passengers that the boat has arrived");
         int passengerCount = self->nextFreeSpot;
@@ -121,9 +124,14 @@ int main(int argc, char **argv) {
                 raise(SIGTERM);
             }
 
+            // Previous bug: This value gets updated in dispatcher - make a copy here:
+            int passengers = self->nextFreeSpot;
             struct MsgQueueMessage terminationMessage = { ID_BOAT_ARRIVED, { .incomingBoat = { BOAT_SHM_SIZE, shmKey, getpid(), 1 }}};
             MSGQUEUE_SEND(&terminationMessage);
-            for(int i = 0; i<self->nextFreeSpot; i++) {
+            // Wait for the confirmation from the dispatcher.
+            MSGQUEUE_RECV_C_DIRECT(&confMessage);
+            msg("There are %d passengers on board to let go first.", passengers);
+            for(int i = 0; i<passengers; i++) {
                 msg("Sending 'leave' signal to pid %d", self->spaces[i]);
                 kill(self->spaces[i], SIG_BOAT_REACHED_DESTINATION);
                 self->spaces[i] = 0;
@@ -135,8 +143,7 @@ int main(int argc, char **argv) {
         // Leave
         struct MsgQueueMessage leaveMessage = { ID_BOAT_DEPARTS };
         MSGQUEUE_SEND(&leaveMessage);
-        // Wait for the confirmation from the boat.
-        struct MsgQueueMessage confMessage;
+        // Wait for the confirmation from the dispatcher.
         MSGQUEUE_RECV_C_DIRECT(&confMessage);
         // Wait for the duration of the transit...
         sleep(BOAT_TRIP_TIME);

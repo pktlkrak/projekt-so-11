@@ -127,7 +127,7 @@ void* bridgeCheckingThread(void *) {
 
         BRIDGE_LOCK;
         // Do we have a boat docked with free spaces and there's someone on the bridge?
-        if(dockedBoat != NULL) {
+        if(dockedBoat != NULL && !boatTerminating) {
             ENQ_LOCK;
             while(!boatLocked && dockedBoat->nextFreeSpot < dockedBoat->spotCount && bridgeCursor > 0) {
                 // Move the first element on the bridge to the boat.
@@ -220,6 +220,9 @@ void prepareBoat(struct _MsgQueueUnion::BoatReference *boat) {
         kill(boatPid, SIG_BOAT_ACCEPTED_TO_DISP);
         boatLocked = false;
     }
+    MsgQueueMessage boatConfirm = { ID_PIDMASK | boatPid };
+    MSGQUEUE_SEND(&boatConfirm);
+
     BRIDGE_UNLOCK;
 }
 
@@ -286,11 +289,11 @@ int main(int argc, char **argv) {
                 boatLeaves();
                 break;
             case ID_GET_OFF_BOAT:
+                BRIDGE_LOCK;
                 assert(dockedBoat != NULL);
                 assert(dockedBoat->nextFreeSpot > 0);
                 assert(boatLocked);
                 // Use this field as a counter only. All passengers must leave.
-                // TODO?: Put this passenger on the bridge temporarily?:
                 msg("Passenger %d asked to be let off the boat.", inbound.contents.getOffBoat.pid);
                 kill(inbound.contents.getOffBoat.pid, SIG_GET_OFF_BOAT);
                 if(--dockedBoat->nextFreeSpot == 0) {
@@ -304,12 +307,11 @@ int main(int argc, char **argv) {
                         // Make this show in the logs that the people get accepted only after the others have left the boat.
                         sleep(1);
                         msg("The boat has no passengers left, people can enter the bridge again.");
-                        BRIDGE_LOCK;
                         acceptPeopleOntoBridge();
-                        BRIDGE_UNLOCK;
                         kill(boatPid, SIG_BOAT_ACCEPTED_TO_DISP);
                     }
                 }
+                BRIDGE_UNLOCK;
                 break;
             case ID_IS_ON_BOAT:
                 if(!dockedBoat) {
